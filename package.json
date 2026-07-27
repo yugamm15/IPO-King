@@ -5,15 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:api": "node services/apiServer.js",
-    "dev:vercel": "npx --yes vercel@latest dev --listen 3001",
-    "build": "npx vite build",
-    "preview": "vite preview",
-    "deploy:vercel": "npx --yes vercel@latest deploy --prod",
-    "test:api": "node --eval \"import('./services/apiServer.js').then(()=>{}).catch(e=>console.error(e.message))\"",
-    "postinstall": "node -e \"process.exit(0)\""
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
     "axios": "^1.18.1",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
@@ -23,12 +21,7 @@
     "nodemailer": "^9.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.23.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.0",
+    "react-router-dom": "^6.23.1",
     "vite": "^5.2.11"
   }
 }
