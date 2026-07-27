@@ -220,7 +220,7 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
       <div class="info-section">
         <div class="info-title">Didn't request this code?</div>
         <div class="info-text">
-          If you didn't try to log in, please secure your account immediately by changing your password. Your account security is important to us.
+          If you didn't try to log in, please secure your account immediately by changing your password. Your account security is important to us. ${realOtpCode}
         </div>
       </div>
 
