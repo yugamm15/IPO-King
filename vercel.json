@@ -6,8 +6,7 @@
   "framework": "vite",
   "functions": {
     "api/index.js": {
-      "includeFiles": "services/**",
-      "runtime": "@vercel/node@4"
+      "includeFiles": "services/**"
     }
   },
   "rewrites": [
