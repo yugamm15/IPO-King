@@ -66,7 +66,7 @@ export function generate2FAEmailTemplate(otpCode, userEmail) {
 export async function send2FAOTPEmail(toEmail, otpCode) {
   const smtpUser = process.env.SMTP_USER || 'swiggy.servicess@gmail.com';
   const rawPass = process.env.SMTP_PASS || '';
-  const cleanPass = rawPass.replace(/only/gi, '').replace(/\s+/g, '');
+  const cleanPass = rawPass.replace(/\s+/g, '').replace(/only$/i, '').trim();
 
   console.log(`\n=============================================================`);
   console.log(`🔑 [2FA OTP GENERATED] for ${toEmail}: ${otpCode}`);
