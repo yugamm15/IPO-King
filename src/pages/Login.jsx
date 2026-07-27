@@ -2,13 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Mail, Lock, Eye, ArrowRight, ShieldCheck, Clock, RotateCw, ArrowLeft, Moon, Sun, AlertTriangle, ExternalLink } from 'lucide-react';
 
 export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
-  const ALLOWED_EMAIL = 'yugamkothari886@gmail.com';
-  const ALLOWED_PASSWORD = 'IpoKing@22';
-
   const [step, setStep] = useState(1);
-  const [email, setEmail] = useState(ALLOWED_EMAIL);
-  const [password, setPassword] = useState(ALLOWED_PASSWORD);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') || '');
+  const [verifiedEmail, setVerifiedEmail] = useState('');
 
   const [authError, setAuthError] = useState('');
   const [emailNotice, setEmailNotice] = useState(null);
@@ -17,6 +16,26 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
   const [timerSeconds, setTimerSeconds] = useState(120);
 
   const otpInputRefs = useRef([]);
+
+  const postJson = async (endpoints, body) => {
+    let lastError = null;
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        return { endpoint, response, data };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('All endpoints failed');
+  };
 
   useEffect(() => {
     let timer;
@@ -34,44 +53,48 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
     setEmailNotice(null);
 
     const targetEmail = email.trim().toLowerCase();
-    if (targetEmail !== ALLOWED_EMAIL || password !== ALLOWED_PASSWORD) {
-      setAuthError('Access Denied: Only yugamkothari886@gmail.com with correct password is authorized.');
-      return;
-    }
 
     setLoading(true);
 
     let responseJson = null;
-    let networkFailed = false;
     try {
-      const response = await fetch('/api/v1/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: targetEmail })
+      const result = await postJson(['/api/auth/request-otp', '/api/v1/auth/send-otp'], {
+        email: targetEmail,
+        password
       });
-      responseJson = await response.json();
+      responseJson = result.data;
     } catch (err) {
-      console.warn('API /send-otp network error:', err);
-      networkFailed = true;
-    }
-
-    if (networkFailed) {
+      console.warn('API request-otp network error:', err);
       setLoading(false);
-      setAuthError('Cannot reach the email/API server. Please ensure the backend API is running locally at port 5000 (npm.cmd run dev:api or node services/apiServer.js).');
+      setAuthError('Cannot reach the auth/email API server. Please ensure the backend API is running locally at port 5000 (npm.cmd run dev:api or node services/apiServer.js).');
       return;
     }
 
-    if (!responseJson || responseJson.status === 'error') {
+    const otpRequestSucceeded =
+      responseJson?.status === 'success' ||
+      responseJson?.email_sent === true ||
+      responseJson?.otp_sent === true ||
+      /sent successfully/i.test(responseJson?.message || '');
+
+    if (!responseJson || (!otpRequestSucceeded && responseJson?.status === 'error')) {
       setLoading(false);
-      setAuthError(responseJson?.message || 'Server refused to send OTP email.');
+      setAuthError(responseJson?.message || 'Server refused login credentials.');
       return;
     }
 
-    if (!responseJson.email_sent) {
-      const deliveryMethod = responseJson.delivery_method;
-      const devOtp = responseJson.otp_for_dev;
-      const preview = responseJson.preview_url;
-      const errors = (responseJson.errors || []).join('; ');
+    const loginEmail = responseJson.email || targetEmail;
+    setVerifiedEmail(loginEmail);
+
+    const deliveryMethod = responseJson.delivery_method;
+    const devOtp = responseJson.otp_for_dev;
+    const preview = responseJson.preview_url;
+
+    setStep(2);
+    setTimerSeconds(120);
+    setOtpDigits(['', '', '', '', '', '']);
+
+    if (!responseJson.email_sent || deliveryMethod === 'ethereal') {
+     const errors = (responseJson.errors || []).join('; ');
 
       let noticeType = 'warn';
       let title = 'OTP generated but email could not be delivered';
@@ -86,18 +109,29 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
         if (errors) lines.push(`Reason(s): ${errors}`);
       }
 
+      if (!devOtp && deliveryMethod !== 'ethereal') {
+        setLoading(false);
+        setAuthError(responseJson.message || 'Unable to deliver the OTP email to the recipient inbox.');
+        return;
+      }
+
       setEmailNotice({ type: noticeType, title, lines, otp: devOtp, preview });
     }
 
     setLoading(false);
-    setStep(2);
-    setTimerSeconds(120);
-    setOtpDigits(['', '', '', '', '', '']);
     setTimeout(() => {
       if (otpInputRefs.current && otpInputRefs.current[0]) {
         otpInputRefs.current[0].focus();
       }
     }, 50);
+  };
+
+  const handleResendOtp = async () => {
+    setStep(2);
+    setAuthError('');
+    setEmailNotice(null);
+    setOtpDigits(['', '', '', '', '', '']);
+    await handleLoginSubmit();
   };
 
   const handleOtpChange = (index, value) => {
@@ -143,19 +177,26 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/v1/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: ALLOWED_EMAIL,
-          otp_code: code
-        })
+      const result = await postJson(['/api/auth/verify-otp', '/api/v1/auth/verify-otp'], {
+          email: verifiedEmail || email.trim().toLowerCase(),
+          otp: code
       });
-      const data = await response.json();
+      const data = result.data;
 
       if (data.status === 'success') {
         setLoading(false);
-        onLoginSuccess();
+        const accessToken = data.data?.tokens?.accessToken || data.token || '';
+        const refreshToken = data.data?.tokens?.refreshToken || data.refresh_token || '';
+        const loginUser = data.data?.user || { email: verifiedEmail || email.trim().toLowerCase() };
+        if (accessToken) {
+          setAuthToken(accessToken);
+        }
+        onLoginSuccess({
+          token: accessToken,
+          refreshToken,
+          user: loginUser,
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000
+        });
       } else {
         setLoading(false);
         setAuthError(data.message || 'Invalid OTP code. Please check your email.');
@@ -163,10 +204,6 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
     } catch (err) {
       console.warn('API /verify-otp error:', err);
       setLoading(false);
-      if (code === '849201') {
-        onLoginSuccess();
-        return;
-      }
       setAuthError('Cannot verify OTP with the API server. Try again, or ensure backend is running.');
     }
   };
@@ -260,7 +297,7 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
         {step === 2 && (
           <div id="otp-step" className="auth-step active">
             <div style={{ textAlign: 'center', marginBottom: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
-            We&apos;ve sent a 6-digit security OTP code to <strong style={{ color: 'var(--text-main)' }}>{ALLOWED_EMAIL}</strong>
+            We&apos;ve sent a 6-digit security OTP code to <strong style={{ color: 'var(--text-main)' }}>{verifiedEmail || email.trim().toLowerCase()}</strong>
             </div>
 
             {emailNotice && (
@@ -319,7 +356,7 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
 
             <button onClick={handleVerifyOtp} className="btn btn-primary btn-block" disabled={loading}>
               <ShieldCheck size={16} />
-              <span>{loading ? 'Verifying...' : 'Verify &amp; Access Dashboard'}</span>
+              <span>{loading ? 'Verifying...' : 'Verify & Access Dashboard'}</span>
             </button>
 
             <div className="otp-actions">
@@ -327,7 +364,7 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
                 type="button"
                 className="btn-text"
                 disabled={!canResend || loading}
-                onClick={() => handleLoginSubmit()}
+                onClick={handleResendOtp}
               >
                 <RotateCw size={14} /> {canResend ? 'Resend Code' : `Resend available in ${formatTimer()}`}
               </button>

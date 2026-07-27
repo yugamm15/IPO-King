@@ -1,7 +1,9 @@
 import React from 'react';
 import { Search, Bell, Database, Moon, Sun } from 'lucide-react';
 
-export default function Navbar({ isDark, onToggleTheme }) {
+export default function Navbar({ isDark, onToggleTheme, user }) {
+  const displayName = user?.full_name || user?.email || 'IPO KING Admin';
+
   return (
     <header className="topbar glass-panel">
       <div className="topbar-search">
@@ -24,6 +26,10 @@ export default function Navbar({ isDark, onToggleTheme }) {
           <Bell size={18} />
           <span className="badge">3</span>
         </button>
+
+        <div className="db-pill" title={displayName}>
+          <span>{displayName}</span>
+        </div>
 
         <div className="db-pill">
           <Database size={14} />

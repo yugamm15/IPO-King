@@ -2,11 +2,14 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Users, Layers, FileSpreadsheet, Wallet, FileText, Settings, LogOut, TrendingUp } from 'lucide-react';
 
-export default function Sidebar({ onLogout }) {
+export default function Sidebar({ onLogout, user, initials }) {
+  const displayName = user?.full_name || user?.email || 'Super Admin';
+  const displayRole = user?.role ? String(user.role).replace(/_/g, ' ') : 'Super Admin';
+
   return (
     <aside className="sidebar glass-panel">
       <div className="sidebar-brand">
-        <TrendingUp class="brand-icon" />
+        <TrendingUp className="brand-icon" />
         <div className="brand-details">
           <span className="brand-name">IPO KING</span>
           <span className="brand-badge-sm">ADMIN v1.0</span>
@@ -45,10 +48,10 @@ export default function Sidebar({ onLogout }) {
       </nav>
 
       <div className="sidebar-user">
-        <div className="user-avatar">AD</div>
+        <div className="user-avatar">{initials || 'AD'}</div>
         <div className="user-info">
-          <span className="user-name">Rajesh Patel</span>
-          <span className="user-role">Super Admin</span>
+          <span className="user-name">{displayName}</span>
+          <span className="user-role">{displayRole}</span>
         </div>
         <button onClick={onLogout} className="btn-logout" title="Logout">
           <LogOut size={18} />

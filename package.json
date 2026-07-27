@@ -5,8 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node services/apiServer.js",
+    "dev:vercel": "npx --yes vercel@latest dev --listen 3001",
+    "vercel-install": "node ./scripts/vercel-install-fix.cjs",
+    "install": "node ./scripts/vercel-install-fix.cjs",
+    "postinstall": "node ./scripts/vercel-install-fix.cjs",
+    "prebuild": "node ./scripts/vercel-install-fix.cjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:vercel": "npx --yes vercel@latest deploy --prod",
+    "test:api": "node --eval \"import('./services/apiServer.js').then(()=>{}).catch(e=>console.error(e.message))\""
   },
   "dependencies": {
     "@types/react": "^18.3.3",

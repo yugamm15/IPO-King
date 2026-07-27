@@ -11,6 +11,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { send2FAOTPEmail } from './emailService.js';
 import { fetchNseIpoCatalog } from './nseScraper.js';
@@ -33,6 +34,92 @@ app.set('trust proxy', true);
 
 const otpStore = new Map();
 
+function getEnvValue(...keys) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return '';
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function base64UrlDecode(value) {
+  return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+}
+
+function signJwt(payload, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const signature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  return `${data}.${signature}`;
+}
+
+function verifyJwt(token, secret) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return null;
+
+  const [encodedHeader, encodedPayload, signature] = parts;
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  const expectedBuffer = Buffer.from(expectedSignature);
+  const actualBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
+    return null;
+  }
+
+  const payload = base64UrlDecode(encodedPayload);
+  if (payload.exp && Date.now() > payload.exp) return null;
+  return payload;
+}
+
+function createAuthToken(email, role = 'admin') {
+  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const now = Date.now();
+  const payload = {
+    email,
+    role,
+    iat: Math.floor(now / 1000),
+    exp: Math.floor((now + 24 * 60 * 60 * 1000) / 1000),
+    jti: crypto.randomUUID()
+  };
+  return signJwt(payload, secret);
+}
+
+function getLoginCredentials() {
+  return {
+    email: getEnvValue('AUTH_ADMIN_EMAIL', 'LOGIN_EMAIL') || 'yugamkothari886@gmail.com',
+    password: getEnvValue('AUTH_ADMIN_PASSWORD', 'LOGIN_PASSWORD') || 'IpoKing@22'
+  };
+}
+
+function getAdminName() {
+  return getEnvValue('AUTH_ADMIN_NAME', 'LOGIN_NAME') || 'IPO KING Admin';
+}
+
+function getBearerToken(req) {
+  const header = req.headers.authorization || '';
+  const [, token] = header.split(' ');
+  return token || '';
+}
+
+function requireAuth(req, res) {
+  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const token = getBearerToken(req);
+  const payload = verifyJwt(token, secret);
+  if (!payload) {
+    res.status(401).json({ status: 'error', message: 'Valid authentication token required.' });
+    return null;
+  }
+  return payload;
+}
+
 function ok(res, payload = {}) {
   return res.json({ status: 'success', ...payload });
 }
@@ -52,10 +139,219 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
+function generateOtpCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateDecoyOtpCode(realOtpCode) {
+  let decoy = generateOtpCode();
+  while (decoy === realOtpCode) {
+    decoy = generateOtpCode();
+  }
+  return decoy;
+}
+
+function issueLoginTokens(email, role = 'admin') {
+  const accessToken = createAuthToken(email, role);
+  const refreshToken = signJwt(
+    {
+      email,
+      role,
+      type: 'refresh',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor((Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000),
+      jti: crypto.randomUUID()
+    },
+    getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026'
+  );
+
+  return { accessToken, refreshToken };
+}
+
+async function requestOtpHandler(req, res) {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return fail(res, 'Email and password are required.');
+  }
+
+  const loginEmail = String(email).trim().toLowerCase();
+  const creds = getLoginCredentials();
+  if (loginEmail !== creds.email.toLowerCase() || String(password) !== creds.password) {
+    return fail(res, 'Invalid email or password.', 401);
+  }
+
+  const realOtpCode = generateOtpCode();
+  const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  otpStore.set(loginEmail, {
+    otpCode: realOtpCode,
+    decoyOtpCode,
+    expiresAt,
+    attempts: 0,
+    role: 'admin'
+  });
+
+  console.log(`[API /request-otp] Sending OTP to: ${loginEmail} (Real: ${realOtpCode}, Decoy: ${decoyOtpCode})`);
+
+  let emailResult;
+  try {
+    emailResult = await send2FAOTPEmail(loginEmail, realOtpCode, {
+      userName: getAdminName(),
+      decoyOtpCode
+    });
+  } catch (err) {
+    console.error(`[API /request-otp] send2FAOTPEmail threw: ${err.message}`);
+    emailResult = {
+      success: false,
+      otpCode: realOtpCode,
+      note: `Exception in email sender. OTP for manual use: ${realOtpCode}`
+    };
+  }
+
+  const response = {
+    message: emailResult.success
+      ? 'OTP sent successfully to your email.'
+      : 'OTP generated. Email delivery issue encountered — see console for manual code.',
+    email: loginEmail,
+    email_sent: !!emailResult.success,
+    delivery_method: emailResult.method || null,
+    otp_sent: true
+  };
+
+  if (!emailResult.success) {
+    response.otp_for_dev = realOtpCode;
+    response.errors = emailResult.errors || [];
+    if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
+    if (emailResult.note) response.note = emailResult.note;
+  } else if (emailResult.previewUrl) {
+    response.preview_url = emailResult.previewUrl;
+  }
+
+  return ok(res, response);
+}
+
+function verifyOtpHandler(req, res) {
+  const { email, otp, otp_code } = req.body || {};
+  if (!email || (!otp && !otp_code)) {
+    return fail(res, 'Email and OTP are required.');
+  }
+
+  const key = String(email).trim().toLowerCase();
+  const stored = otpStore.get(key);
+  if (!stored) {
+    return fail(res, 'No active OTP found for this email. Request a new code.');
+  }
+
+  if (Date.now() > stored.expiresAt) {
+    otpStore.delete(key);
+    return fail(res, 'OTP code has expired. Request a new code.');
+  }
+
+  const providedOtp = String(otp || otp_code).trim();
+  if (providedOtp !== stored.otpCode) {
+    stored.attempts += 1;
+    const attemptsRemaining = Math.max(0, 5 - stored.attempts);
+    return fail(res, attemptsRemaining > 0 ? `Invalid OTP code. ${attemptsRemaining} attempts remaining.` : 'Maximum OTP attempts exceeded. Request a new code.', 401);
+  }
+
+  otpStore.delete(key);
+  const tokens = issueLoginTokens(key, stored.role || 'admin');
+  return ok(res, {
+    message: 'Login successful',
+    token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
+    token_type: 'Bearer',
+    token_expires_in: 86400,
+    data: {
+      user: {
+        email: key,
+        full_name: getAdminName(),
+        role: stored.role || 'admin'
+      },
+      tokens: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tokenType: 'Bearer',
+        expiresIn: 86400
+      }
+    }
+  });
+}
+
+function refreshTokenHandler(req, res) {
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) {
+    return fail(res, 'Refresh token is required.');
+  }
+
+  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const payload = verifyJwt(refreshToken, secret);
+  if (!payload || payload.type !== 'refresh') {
+    return fail(res, 'Invalid refresh token.', 401);
+  }
+
+  const tokens = issueLoginTokens(payload.email, payload.role || 'admin');
+  return ok(res, {
+    message: 'Token refreshed successfully',
+    token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
+    token_type: 'Bearer',
+    token_expires_in: 86400
+  });
+}
+
+function logoutHandler(req, res) {
+  return ok(res, {
+    message: 'Logged out successfully'
+  });
+}
+
+app.post(['/api/auth/request-otp', '/api/v1/auth/send-otp'], requestOtpHandler);
+
+app.post(['/api/auth/verify-otp', '/api/v1/auth/verify-otp'], verifyOtpHandler);
+
+app.post(['/api/auth/refresh-token', '/api/v1/auth/refresh-token'], refreshTokenHandler);
+
+app.post(['/api/auth/logout', '/api/v1/auth/logout'], logoutHandler);
+
+app.post('/api/v1/auth/login', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return fail(res, 'Email and password are required.');
+  }
+
+  const loginEmail = String(email).trim().toLowerCase();
+  const creds = getLoginCredentials();
+  if (loginEmail !== creds.email.toLowerCase() || String(password) !== creds.password) {
+    return fail(res, 'Invalid email or password.', 401);
+  }
+
+  const token = createAuthToken(creds.email, 'admin');
+  return ok(res, {
+    message: 'Login validated successfully. Proceed with OTP verification.',
+    token,
+    token_type: 'Bearer',
+    token_expires_in: 86400,
+    user: {
+      email: creds.email,
+      role: 'admin',
+      full_name: getAdminName()
+    }
+  });
+});
+
 app.post('/api/v1/auth/send-otp', async (req, res) => {
   const { email } = req.body || {};
   if (!email || typeof email !== 'string') {
     return fail(res, 'Email address is required.');
+  }
+
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
+  if (authUser.email.toLowerCase() !== String(email).trim().toLowerCase()) {
+    return fail(res, 'Authenticated user does not match the requested email.', 403);
   }
 
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -102,6 +398,13 @@ app.post('/api/v1/auth/verify-otp', (req, res) => {
   const { email, otp_code } = req.body || {};
   if (!email || !otp_code) {
     return fail(res, 'Email and OTP code are required.');
+  }
+
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
+  if (authUser.email.toLowerCase() !== String(email).trim().toLowerCase()) {
+    return fail(res, 'Authenticated user does not match the requested email.', 403);
   }
 
   const key = email.toLowerCase();

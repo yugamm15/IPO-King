@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import ExcelImportModal from './components/ExcelImportModal';
+import { useSession } from './context/SessionContext.jsx';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -14,18 +15,12 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('isAuth') === 'true';
-  });
   const [isDark, setIsDark] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   
   const navigate = useNavigate();
   const location = useLocation();
-
-  useEffect(() => {
-    localStorage.setItem('isAuth', isAuthenticated ? 'true' : 'false');
-  }, [isAuthenticated]);
+  const { isAuthenticated, login, logout, user } = useSession();
 
   const handleToggleTheme = () => {
     setIsDark(!isDark);
@@ -36,50 +31,32 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('isAuth', 'true');
+  const handleLoginSuccess = (sessionData) => {
+    login(sessionData);
     navigate('/dashboard');
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.setItem('isAuth', 'false');
+    logout();
     navigate('/login');
   };
 
-  // If on /login page or not authenticated, render standalone clean Login screen
-  if (!isAuthenticated || location.pathname === '/login') {
-    return (
-      <>
-        <div className="bg-blur blur-1"></div>
-        <div className="bg-blur blur-2"></div>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <Login
-                onLoginSuccess={handleLoginSuccess}
-                isDark={isDark}
-                onToggleTheme={handleToggleTheme}
-              />
-            }
-          />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </>
-    );
-  }
+  const initials = (user?.full_name || user?.email || 'AD')
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
-  return (
+  const protectedContent = (
     <div className="dashboard-wrapper">
       <div className="bg-blur blur-1"></div>
       <div className="bg-blur blur-2"></div>
 
-      <Sidebar onLogout={handleLogout} />
+      <Sidebar onLogout={handleLogout} user={user} initials={initials} />
 
       <main className="main-content">
-        <Navbar isDark={isDark} onToggleTheme={handleToggleTheme} />
+        <Navbar isDark={isDark} onToggleTheme={handleToggleTheme} user={user} />
 
         <div className="content-body">
           <Routes>
@@ -108,4 +85,35 @@ export default function App() {
       />
     </div>
   );
+
+  if (location.pathname === '/login') {
+    if (isAuthenticated) {
+      return <Navigate to="/dashboard" replace />;
+    }
+    return (
+      <>
+        <div className="bg-blur blur-1"></div>
+        <div className="bg-blur blur-2"></div>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <Login
+                onLoginSuccess={handleLoginSuccess}
+                isDark={isDark}
+                onToggleTheme={handleToggleTheme}
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return protectedContent;
 }
