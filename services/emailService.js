@@ -1,11 +1,21 @@
 /**
  * IPO KING - Enterprise Email Service
  * Sends secure 2FA One-Time Passwords (OTP) & Transactional Notifications
- * Uses HTTPS Port 443 + SMTP Fallback for 100% Deliverability on All Networks
+ * Multi-channel delivery: Resend HTTPS API → SMTP → Direct transport → Ethereal preview fallback
  */
 
 import nodemailer from 'nodemailer';
 import axios from 'axios';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+try {
+  dotenv.config({ path: path.resolve(__dirname, '..', '.env.local') });
+} catch (_) { try { dotenv.config(); } catch (_) { /* noop */ } }
 
 export function generate2FAEmailTemplate(otpCode, userEmail) {
   return `
@@ -63,58 +73,198 @@ export function generate2FAEmailTemplate(otpCode, userEmail) {
   `;
 }
 
+function sanitizeAppPassword(rawPass) {
+  if (!rawPass) return '';
+  let pass = String(rawPass).trim();
+  pass = pass.replace(/\s+/g, '');
+  return pass;
+}
+
+function buildSmtpConfig() {
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT, 10) || 587;
+  const smtpSecureStr = (process.env.SMTP_SECURE || 'false').toLowerCase();
+  const smtpSecure = smtpSecureStr === 'true' || smtpPort === 465;
+  const smtpUser = process.env.SMTP_USER || '';
+  const smtpPass = sanitizeAppPassword(process.env.SMTP_PASS || '');
+
+  if (smtpUser && smtpPass) {
+    return {
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      },
+      connectionTimeout: 15000,
+      socketTimeout: 15000,
+      greetingTimeout: 10000,
+      pool: true,
+      maxConnections: 1,
+      maxMessages: 10,
+      rateDelta: 1000,
+      rateLimit: 5
+    };
+  }
+
+  if (smtpUser === '' && smtpPass === '') {
+    return null;
+  }
+
+  return {
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
+    connectionTimeout: 15000,
+    socketTimeout: 15000,
+    greetingTimeout: 10000
+  };
+}
+
+let etherealTransporterPromise = null;
+async function getEtherealTransporter() {
+  if (etherealTransporterPromise) {
+    return etherealTransporterPromise;
+  }
+  etherealTransporterPromise = (async () => {
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      const transporter = nodemailer.createTransport({
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass
+        },
+        connectionTimeout: 15000,
+        socketTimeout: 15000
+      });
+      return { transporter, testAccount };
+    } catch (e) {
+      etherealTransporterPromise = null;
+      throw e;
+    }
+  })();
+  return etherealTransporterPromise;
+}
+
 export async function send2FAOTPEmail(toEmail, otpCode) {
-  const smtpUser = process.env.SMTP_USER || 'swiggy.servicess@gmail.com';
-  const rawPass = process.env.SMTP_PASS || '';
-  const cleanPass = rawPass.replace(/\s+/g, '').replace(/only$/i, '').trim();
+  const smtpUser = process.env.SMTP_USER || '';
+  const subject = `🔐 ${otpCode} is your IPO KING Security Verification Code`;
+  const htmlBody = generate2FAEmailTemplate(otpCode, toEmail);
 
   console.log(`\n=============================================================`);
   console.log(`🔑 [2FA OTP GENERATED] for ${toEmail}: ${otpCode}`);
   console.log(`=============================================================\n`);
 
-  // Method 1: Try Resend / Web API via HTTPS (Port 443 - Never Blocked)
+  const errors = [];
+
   if (process.env.RESEND_API_KEY) {
     try {
+      const resendFrom = process.env.RESEND_FROM_EMAIL || 'IPO KING Auth <onboarding@resend.dev>';
       const response = await axios.post('https://api.resend.com/emails', {
-        from: 'IPO KING Auth <onboarding@resend.dev>',
+        from: resendFrom,
         to: [toEmail],
-        subject: `🔐 ${otpCode} is your IPO KING Security Verification Code`,
-        html: generate2FAEmailTemplate(otpCode, toEmail)
+        subject: subject,
+        html: htmlBody
       }, {
         headers: {
           'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 20000
       });
-      console.log(`[Email Service HTTPS Success] Email sent via Resend API:`, response.data);
-      return { success: true, messageId: response.data.id };
+      console.log(`[Email] ✅ Sent via Resend HTTPS API: id=${response.data?.id}`);
+      return { success: true, messageId: response.data?.id, method: 'resend' };
     } catch (apiErr) {
-      console.warn(`[HTTPS API Warning] Resend API notice:`, apiErr.message);
+      const msg = apiErr.response?.data?.message || apiErr.message || 'Unknown Resend error';
+      console.warn(`[Email] ⚠️ Resend API failed: ${msg}`);
+      errors.push(`Resend: ${msg}`);
     }
   }
 
-  // Method 2: Try Gmail SMTP Transporter
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: smtpUser,
-      pass: cleanPass
-    },
-    connectionTimeout: 3000,
-    socketTimeout: 3000
-  });
+  const smtpConfig = buildSmtpConfig();
+  if (smtpConfig) {
+    try {
+      const transporter = nodemailer.createTransport(smtpConfig);
+      const fromAddress = smtpConfig.auth?.user || (smtpUser || 'noreply@ipoking.com');
+      const fromDisplayName = process.env.SMTP_FROM_NAME || 'IPO KING Auth';
+      const info = await transporter.sendMail({
+        from: `"${fromDisplayName}" <${fromAddress}>`,
+        to: toEmail,
+        subject: subject,
+        html: htmlBody
+      });
+      console.log(`[Email] ✅ Sent via SMTP (${smtpConfig.host}:${smtpConfig.port}). messageId=${info.messageId}`);
+      if (transporter.close && typeof transporter.close === 'function') {
+        try { transporter.close(); } catch (_) { /* noop */ }
+      }
+      return { success: true, messageId: info.messageId, method: 'smtp' };
+    } catch (smtpErr) {
+      const code = smtpErr.code || smtpErr.responseCode || 'ERR';
+      const msg = smtpErr.message || 'SMTP error';
+      console.warn(`[Email] ⚠️ SMTP failed [${code}]: ${msg}`);
+      errors.push(`SMTP [${code}]: ${msg}`);
+    }
+  }
 
   try {
-    const info = await transporter.sendMail({
-      from: `"IPO KING Auth" <${smtpUser}>`,
-      to: toEmail,
-      subject: `🔐 ${otpCode} is your IPO KING Security Verification Code`,
-      html: generate2FAEmailTemplate(otpCode, toEmail)
+    const directTransporter = nodemailer.createTransport({
+      direct: true,
+      connectionTimeout: 20000,
+      socketTimeout: 20000,
+      greetingTimeout: 15000
     });
-    console.log(`[Email Service SMTP Success] Email sent to ${toEmail}. ID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
-  } catch (smtpErr) {
-    console.warn(`[Email Service Notice] Local ISP blocked SMTP ports (${smtpErr.code || smtpErr.message}). Code logged in console: ${otpCode}`);
-    return { success: false, error: smtpErr.message };
+    const fromForDirect = smtpUser || 'ipo-king-auth@' + (toEmail.split('@')[1] || 'localhost');
+    const info = await directTransporter.sendMail({
+      from: `"IPO KING Auth" <${fromForDirect}>`,
+      to: toEmail,
+      subject: subject,
+      html: htmlBody
+    });
+    console.log(`[Email] ✅ Sent via direct MX transport. messageId=${info.messageId}`);
+    if (directTransporter.close && typeof directTransporter.close === 'function') {
+      try { directTransporter.close(); } catch (_) { /* noop */ }
+    }
+    return { success: true, messageId: info.messageId, method: 'direct' };
+  } catch (directErr) {
+    const msg = directErr.message || 'Direct transport error';
+    console.warn(`[Email] ⚠️ Direct MX transport failed: ${msg}`);
+    errors.push(`Direct: ${msg}`);
   }
+
+  try {
+    const { transporter, testAccount } = await getEtherealTransporter();
+    const info = await transporter.sendMail({
+      from: `"IPO KING Auth" <${testAccount.user}>`,
+      to: toEmail,
+      subject: subject,
+      html: htmlBody
+    });
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    console.log(`[Email] ✅ Sent via Ethereal test account (dev fallback).`);
+    console.log(`[Email] 📧 Preview email at: ${previewUrl}`);
+    return {
+      success: true,
+      messageId: info.messageId,
+      method: 'ethereal',
+      previewUrl,
+      note: 'Delivered to Ethereal test inbox (dev mode). Real email not sent.'
+    };
+  } catch (ethErr) {
+    const msg = ethErr.message || 'Ethereal error';
+    console.warn(`[Email] ⚠️ Ethereal fallback failed: ${msg}`);
+    errors.push(`Ethereal: ${msg}`);
+  }
+
+  console.error(`[Email] ❌ All delivery methods failed for ${toEmail}.`);
+  console.error(`[Email] 📌 OTP code for manual use: ${otpCode}`);
+  return {
+    success: false,
+    otpCode,
+    errors,
+    note: `All email providers failed. OTP code for manual verification: ${otpCode}`
+  };
 }

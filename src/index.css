@@ -687,3 +687,73 @@ body.dark-theme .btn-secondary {
     border-radius: 6px;
     border: 1px solid var(--panel-border);
 }
+
+.auth-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    line-height: 1.5;
+    border: 1px solid transparent;
+}
+.auth-banner-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.auth-banner-error {
+    background: rgba(220, 38, 38, 0.08);
+    border-color: rgba(220, 38, 38, 0.25);
+    color: #991B1B;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+}
+.auth-banner-error svg { color: var(--danger); flex-shrink: 0; margin-top: 2px; }
+body.dark-theme .auth-banner-error {
+    color: #FECACA;
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
+}
+.auth-banner-warn {
+    background: rgba(217, 119, 6, 0.08);
+    border-color: rgba(217, 119, 6, 0.25);
+    color: #92400E;
+}
+.auth-banner-warn svg { color: var(--warning); flex-shrink: 0; }
+body.dark-theme .auth-banner-warn {
+    color: #FDE68A;
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+}
+.auth-banner-info {
+    background: rgba(37, 99, 235, 0.08);
+    border-color: rgba(37, 99, 235, 0.25);
+    color: #1E40AF;
+}
+.auth-banner-info svg { color: var(--primary); flex-shrink: 0; }
+body.dark-theme .auth-banner-info {
+    color: #BFDBFE;
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.25);
+}
+
+.timer-expiring {
+    color: var(--danger) !important;
+    animation: pulse-red 1s infinite;
+}
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.btn:disabled, .btn-text:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
