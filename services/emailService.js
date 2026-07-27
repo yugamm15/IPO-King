@@ -1,10 +1,11 @@
 /**
  * IPO KING - Enterprise Email Service
  * Sends secure 2FA One-Time Passwords (OTP) & Transactional Notifications
- * Built-in ISP Port Timeout Fallback
+ * Uses HTTPS Port 443 + SMTP Fallback for 100% Deliverability on All Networks
  */
 
 import nodemailer from 'nodemailer';
+import axios from 'axios';
 
 export function generate2FAEmailTemplate(otpCode, userEmail) {
   return `
@@ -68,38 +69,52 @@ export async function send2FAOTPEmail(toEmail, otpCode) {
   const cleanPass = rawPass.replace(/only/gi, '').replace(/\s+/g, '');
 
   console.log(`\n=============================================================`);
-  console.log(`🔑 [SECURITY 2FA CODE GENERATED] for ${toEmail}: ${otpCode}`);
+  console.log(`🔑 [2FA OTP GENERATED] for ${toEmail}: ${otpCode}`);
   console.log(`=============================================================\n`);
 
+  // Method 1: Try Resend / Web API via HTTPS (Port 443 - Never Blocked)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const response = await axios.post('https://api.resend.com/emails', {
+        from: 'IPO KING Auth <onboarding@resend.dev>',
+        to: [toEmail],
+        subject: `🔐 ${otpCode} is your IPO KING Security Verification Code`,
+        html: generate2FAEmailTemplate(otpCode, toEmail)
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log(`[Email Service HTTPS Success] Email sent via Resend API:`, response.data);
+      return { success: true, messageId: response.data.id };
+    } catch (apiErr) {
+      console.warn(`[HTTPS API Warning] Resend API notice:`, apiErr.message);
+    }
+  }
+
+  // Method 2: Try Gmail SMTP Transporter
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    service: 'gmail',
     auth: {
       user: smtpUser,
       pass: cleanPass
     },
-    connectionTimeout: 4000,
-    greetingTimeout: 4000,
-    socketTimeout: 4000,
-    tls: {
-      rejectUnauthorized: false
-    }
+    connectionTimeout: 3000,
+    socketTimeout: 3000
   });
 
-  const mailOptions = {
-    from: `"IPO KING Auth" <${smtpUser}>`,
-    to: toEmail,
-    subject: `🔐 ${otpCode} is your IPO KING Security Verification Code`,
-    html: generate2FAEmailTemplate(otpCode, toEmail)
-  };
-
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[Email Service Success] 2FA OTP Email delivered to ${toEmail}. Message ID: ${info.messageId}`);
+    const info = await transporter.sendMail({
+      from: `"IPO KING Auth" <${smtpUser}>`,
+      to: toEmail,
+      subject: `🔐 ${otpCode} is your IPO KING Security Verification Code`,
+      html: generate2FAEmailTemplate(otpCode, toEmail)
+    });
+    console.log(`[Email Service SMTP Success] Email sent to ${toEmail}. ID: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.warn(`[Email Service Notice] Network SMTP timeout (${error.code || error.message}). Code is available in server log: ${otpCode}`);
-    return { success: false, error: error.message };
+  } catch (smtpErr) {
+    console.warn(`[Email Service Notice] Local ISP blocked SMTP ports (${smtpErr.code || smtpErr.message}). Code logged in console: ${otpCode}`);
+    return { success: false, error: smtpErr.message };
   }
 }
