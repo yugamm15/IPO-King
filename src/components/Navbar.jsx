@@ -1,39 +1,55 @@
 import React from 'react';
-import { Search, Bell, Database, Moon, Sun } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { LayoutDashboard, Users, Layers, FileSpreadsheet, Wallet, FileText, Settings, LogOut, TrendingUp } from 'lucide-react';
 
-export default function Navbar({ isDark, onToggleTheme, user }) {
-  const displayName = user?.full_name || user?.email || 'IPO KING Admin';
+export default function Navbar({ onLogout, user, initials }) {
+  const displayName = user?.full_name || user?.email || 'Super Admin';
 
   return (
-    <header className="topbar glass-panel">
-      <div className="topbar-search">
-        <Search size={16} />
-        <input type="text" placeholder="Search customer PAN, IPO name, Application ID..." />
-      </div>
-
-      <div className="topbar-actions">
-        <div className="system-status">
-          <span className="status-indicator online"></span>
-          <span>Node.js Live Sync Active</span>
+    <header className="topnav glass-panel">
+      <div className="topnav-container">
+        <div className="topnav-brand">
+          <TrendingUp className="brand-icon" />
+          <div className="brand-details">
+            <span className="brand-name">IPO KING</span>
+          </div>
         </div>
 
-        <button type="button" className="theme-toggle-btn" onClick={onToggleTheme}>
-          {isDark ? <Sun size={14} /> : <Moon size={14} />}
-          <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
-        </button>
+        <nav className="topnav-menu">
+          <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <LayoutDashboard size={16} />
+            <span>Dashboard</span>
+          </NavLink>
+          <NavLink to="/customers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Users size={16} />
+            <span>Customers (17 Fields)</span>
+          </NavLink>
+          <NavLink to="/ipos" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Layers size={16} />
+            <span>IPO Master</span>
+          </NavLink>
+          <NavLink to="/applications" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <FileSpreadsheet size={16} />
+            <span>Applications</span>
+          </NavLink>
+          <NavLink to="/payments" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Wallet size={16} />
+            <span>Payments & Profits</span>
+          </NavLink>
+          <NavLink to="/reports" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <FileText size={16} />
+            <span>10 Reports</span>
+          </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Settings size={16} />
+            <span>System Settings</span>
+          </NavLink>
+        </nav>
 
-        <button className="icon-btn" title="Notifications">
-          <Bell size={18} />
-          <span className="badge">3</span>
-        </button>
-
-        <div className="db-pill" title={displayName}>
-          <span>{displayName}</span>
-        </div>
-
-        <div className="db-pill">
-          <Database size={14} />
-          <span>DB: Supabase</span>
+        <div className="topnav-user">
+          <button onClick={onLogout} className="btn-logout" title="Logout">
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </header>

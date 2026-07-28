@@ -24,7 +24,7 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sviggy - Your OTP</title>
+  <title>Svviggy - Your OTP</title>
     <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -194,14 +194,14 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
 <body>
   <div class="email-container">
     <div class="header">
-      <div class="logo">🛵 Sviggy</div>
+      <div class="logo">🛵 Svviggy</div>
       <div class="header-subtitle">Your One-Time Password</div>
         </div>
 
     <div class="content">
       <div class="greeting">Hi there!</div>
       <p class="description">
-        We received a request to sign in to your Sviggy account. Use the OTP below to verify your identity.
+        We received a request to sign in to your Svviggy account. Use the OTP below to verify your identity.
       </p>
 
             <div class="otp-box">
@@ -213,7 +213,7 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
       <div class="warning-box">
         <div class="warning-title">🔒 Keep it Safe</div>
         <div class="warning-text">
-          Never share this OTP with anyone, including Sviggy staff. We will never ask for your OTP via call or message.
+          Never share this OTP with anyone, including Svviggy staff. We will never ask for your OTP via call or message.
         </div>
             </div>
 
@@ -224,7 +224,7 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
         </div>
       </div>
 
-      <a href="#" class="cta-button">Go to Sviggy</a>
+      <a href="#" class="cta-button">Go to Svviggy</a>
         </div>
 
     <div class="footer">
@@ -237,7 +237,7 @@ export function generate2FAEmailTemplate(realOtpCode, userEmail, decoyOtpCode = 
         <a href="#">Contact Us</a>
       </div>
       <div class="social">
-        © ${new Date().getFullYear()} Sviggy | All rights reserved
+        © ${new Date().getFullYear()} Svviggy | All rights reserved
       </div>
         </div>
     </div>

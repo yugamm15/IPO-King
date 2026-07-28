@@ -1,10 +1,55 @@
-import React, { useState } from 'react';
-import { Users, FileCheck2, Coins, Percent, TrendingUp, Calculator, History, Download, UploadCloud, PlusCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, FileCheck2, Coins, Percent, TrendingUp, Calculator, History, Download, PlusCircle, RefreshCw, Database } from 'lucide-react';
+import { fetchLiveIpos, fetchApplicationsLedger, fetchDashboardStats, subscribeToRealtimeChanges } from '../services/db.js';
 
-export default function Dashboard({ onOpenExcelModal }) {
+export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
   const [allotPrice, setAllotPrice] = useState(500);
   const [listPrice, setListPrice] = useState(850);
   const [qty, setQty] = useState(100);
+
+  const [stats, setStats] = useState({
+    totalCustomers: '0',
+    appliedFundPool: '0.00',
+    customerProfit: '0.00',
+    tdsDeducted: '0.00'
+  });
+
+  const [liveIpos, setLiveIpos] = useState([]);
+  const [applicationsLedger, setApplicationsLedger] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+
+  const loadAllData = async () => {
+    setIsLoading(true);
+    try {
+      const [statsRes, iposRes, ledgerRes] = await Promise.all([
+        fetchDashboardStats(),
+        fetchLiveIpos(),
+        fetchApplicationsLedger()
+      ]);
+      setStats(statsRes);
+      setLiveIpos(iposRes);
+      setApplicationsLedger(ledgerRes);
+      setLastRefreshed(new Date());
+    } catch (err) {
+      console.error('Dashboard live data fetch error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllData();
+
+    // Subscribe to Supabase Realtime changes
+    const unsubscribe = subscribeToRealtimeChanges(() => {
+      loadAllData();
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const profitPerShare = listPrice - allotPrice;
   const totalProfit = profitPerShare * qty;
@@ -13,18 +58,29 @@ export default function Dashboard({ onOpenExcelModal }) {
   const tds = custShare * 0.10;
   const netPayout = custShare - tds;
 
+  const getStatusBadgeClass = (status) => {
+    switch (String(status).toLowerCase()) {
+      case 'open': return 'status-badge open';
+      case 'upcoming': return 'status-badge upcoming';
+      case 'listed': return 'status-badge listed';
+      case 'full allotment': return 'status-badge full';
+      case 'partial allotment': return 'status-badge partial';
+      case 'rejected': return 'status-badge rejected';
+      default: return 'status-badge open';
+    }
+  };
+
   return (
     <div className="tab-pane active">
       <div className="welcome-header">
         <div>
           <h2>System Control Overview</h2>
-          <p>IPO Applications, Profit Distribution Ledger (40-60 Split) & 10% TDS Engine</p>
         </div>
         <div className="quick-actions">
-          <button className="btn btn-primary" onClick={onOpenExcelModal}>
-            <UploadCloud size={16} /> Bulk Import Excel (17 Cols)
+          <button className="btn btn-secondary" onClick={loadAllData} title="Refresh Database Data">
+            <RefreshCw size={14} className={isLoading ? 'spin' : ''} /> Refresh
           </button>
-          <button className="btn btn-secondary">
+          <button className="btn btn-primary" onClick={onOpenAddIpoModal}>
             <PlusCircle size={16} /> Add New IPO
           </button>
         </div>
@@ -35,8 +91,8 @@ export default function Dashboard({ onOpenExcelModal }) {
           <div className="stat-icon icon-blue"><Users size={24} /></div>
           <div className="stat-data">
             <span className="stat-label">Total Customers</span>
-            <h3 className="stat-value">1,248</h3>
-            <span className="stat-sub positive"><TrendingUp size={12} /> +12% this month</span>
+            <h3 className="stat-value">{stats.totalCustomers}</h3>
+            <span className="stat-sub positive">Live DB Count</span>
           </div>
         </div>
 
@@ -44,8 +100,8 @@ export default function Dashboard({ onOpenExcelModal }) {
           <div className="stat-icon icon-purple"><FileCheck2 size={24} /></div>
           <div className="stat-data">
             <span className="stat-label">Applied Fund Pool</span>
-            <h3 className="stat-value">₹ 24.50 Cr</h3>
-            <span className="stat-sub">14 Open IPOs</span>
+            <h3 className="stat-value">₹ {stats.appliedFundPool}</h3>
+            <span className="stat-sub">{liveIpos.length} Active IPOs</span>
           </div>
         </div>
 
@@ -53,7 +109,7 @@ export default function Dashboard({ onOpenExcelModal }) {
           <div className="stat-icon icon-green"><Coins size={24} /></div>
           <div className="stat-data">
             <span className="stat-label">Customer Profit (40%)</span>
-            <h3 className="stat-value">₹ 42.84 L</h3>
+            <h3 className="stat-value">₹ {stats.customerProfit}</h3>
             <span className="stat-sub positive">Distributed</span>
           </div>
         </div>
@@ -62,7 +118,7 @@ export default function Dashboard({ onOpenExcelModal }) {
           <div className="stat-icon icon-amber"><Percent size={24} /></div>
           <div className="stat-data">
             <span className="stat-label">Total 10% TDS Deducted</span>
-            <h3 className="stat-value">₹ 10.71 L</h3>
+            <h3 className="stat-value">₹ {stats.tdsDeducted}</h3>
             <span className="stat-sub">Tax Ready</span>
           </div>
         </div>
@@ -73,7 +129,6 @@ export default function Dashboard({ onOpenExcelModal }) {
           <div className="card-header">
             <div>
               <h3><TrendingUp size={18} /> Live IPO Catalog & Allotment Engine</h3>
-              <p>Automated Node.js scraper syncing daily</p>
             </div>
             <span className="pill-badge">Live Market</span>
           </div>
@@ -91,45 +146,33 @@ export default function Dashboard({ onOpenExcelModal }) {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>
-                    <div className="ipo-cell">
-                      <strong>Swiggy Ltd IPO</strong>
-                      <span className="cell-sub">NSE: SWIGGY | BSE: 544200</span>
-                    </div>
-                  </td>
-                  <td>₹371 - ₹390</td>
-                  <td>38 shares</td>
-                  <td>15 Nov - 19 Nov</td>
-                  <td><span className="status-badge open">Open Now</span></td>
-                  <td><span className="tag-green">+₹180/sh Est.</span></td>
-                </tr>
-                <tr>
-                  <td>
-                    <div className="ipo-cell">
-                      <strong>Tata Technologies</strong>
-                      <span className="cell-sub">NSE: TATATECH</span>
-                    </div>
-                  </td>
-                  <td>₹475 - ₹500</td>
-                  <td>30 shares</td>
-                  <td>22 Nov - 25 Nov</td>
-                  <td><span className="status-badge upcoming">Upcoming</span></td>
-                  <td><span className="tag-purple">+₹420/sh Est.</span></td>
-                </tr>
-                <tr>
-                  <td>
-                    <div className="ipo-cell">
-                      <strong>Bajaj Housing Finance</strong>
-                      <span className="cell-sub">NSE: BAJAJHFL</span>
-                    </div>
-                  </td>
-                  <td>₹66 - ₹70</td>
-                  <td>214 shares</td>
-                  <td>09 Dec - 12 Dec</td>
-                  <td><span className="status-badge listed">Listed</span></td>
-                  <td><strong className="tag-gold">100% Listed Gain</strong></td>
-                </tr>
+                {liveIpos.length > 0 ? (
+                  liveIpos.map((ipo) => (
+                    <tr key={ipo.id}>
+                      <td>
+                        <div className="ipo-cell">
+                          <strong>{ipo.ipo_name}</strong>
+                          <span className="cell-sub">{ipo.company_name || ipo.symbol || 'NSE / BSE'}</span>
+                        </div>
+                      </td>
+                      <td>₹{ipo.price_band_min} - ₹{ipo.price_band_max}</td>
+                      <td>{ipo.lot_size} shares</td>
+                      <td>{ipo.subscription_open_date || ipo.open_date || 'Open'}</td>
+                      <td><span className={getStatusBadgeClass(ipo.status)}>{ipo.status}</span></td>
+                      <td><span className="tag-green">{ipo.gain_est || '+₹180/sh Est.'}</span></td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <Database size={32} style={{ opacity: 0.5 }} />
+                        <strong>No IPOs found in your Supabase database</strong>
+                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Add a new IPO or import Excel data to populate this table live.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -183,7 +226,6 @@ export default function Dashboard({ onOpenExcelModal }) {
         <div className="card-header">
           <div>
             <h3><History size={18} /> Recent Application Ledger & Reconciliations</h3>
-            <p>Automated customer balance trigger active</p>
           </div>
           <button className="btn-text"><Download size={14} /> Export Excel</button>
         </div>
@@ -204,39 +246,31 @@ export default function Dashboard({ onOpenExcelModal }) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td><strong>Amit Kumar Patel</strong></td>
-                <td><code>AAAPA1234X</code></td>
-                <td>•••• 5678</td>
-                <td>Swiggy Ltd</td>
-                <td>38 shares</td>
-                <td><span class="status-badge full">Full Allotment</span></td>
-                <td>₹ 2,736.00</td>
-                <td>₹ 273.60</td>
-                <td><button className="btn-xs btn-outline">Details</button></td>
-              </tr>
-              <tr>
-                <td><strong>Rajesh Sharma</strong></td>
-                <td><code>BBBPB5678Y</code></td>
-                <td>•••• 9012</td>
-                <td>Bajaj Housing</td>
-                <td>214 shares</td>
-                <td><span class="status-badge partial">Partial Allotment</span></td>
-                <td>₹ 5,992.00</td>
-                <td>₹ 599.20</td>
-                <td><button className="btn-xs btn-outline">Details</button></td>
-              </tr>
-              <tr>
-                <td><strong>Priya Verma</strong></td>
-                <td><code>CCCPC9012Z</code></td>
-                <td>•••• 3456</td>
-                <td>Tata Tech</td>
-                <td>30 shares</td>
-                <td><span class="status-badge rejected">Rejected</span></td>
-                <td>₹ 0.00</td>
-                <td>₹ 0.00</td>
-                <td><button className="btn-xs btn-outline">Refunded</button></td>
-              </tr>
+              {applicationsLedger.length > 0 ? (
+                applicationsLedger.map((app) => (
+                  <tr key={app.id}>
+                    <td><strong>{app.customer_name}</strong></td>
+                    <td><code>{app.pan_number}</code></td>
+                    <td>{app.bank_account}</td>
+                    <td>{app.ipo_applied}</td>
+                    <td>{app.qty}</td>
+                    <td><span className={getStatusBadgeClass(app.status)}>{app.status}</span></td>
+                    <td>{app.profit_40}</td>
+                    <td>{app.tds_10}</td>
+                    <td><button className="btn-xs btn-outline">{app.action || 'Details'}</button></td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <Database size={32} style={{ opacity: 0.5 }} />
+                      <strong>No application records found in your database</strong>
+                      <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Use "Bulk Import Excel" to upload customers and applications to your database.</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -17,6 +17,7 @@
     "test:api": "node --eval \"import('./services/apiServer.js').then(()=>{}).catch(e=>console.error(e.message))\""
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.9",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",

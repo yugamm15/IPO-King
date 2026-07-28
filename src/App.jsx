@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import ExcelImportModal from './components/ExcelImportModal';
+import AddIpoModal from './components/AddIpoModal';
 import { useSession } from './context/SessionContext.jsx';
 
 import Login from './pages/Login';
@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isAddIpoModalOpen, setIsAddIpoModalOpen] = useState(false);
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -53,23 +54,29 @@ export default function App() {
       <div className="bg-blur blur-1"></div>
       <div className="bg-blur blur-2"></div>
 
-      <Sidebar onLogout={handleLogout} user={user} initials={initials} />
+      <Navbar onLogout={handleLogout} user={user} initials={initials} />
 
       <main className="main-content">
-        <Navbar isDark={isDark} onToggleTheme={handleToggleTheme} user={user} />
-
         <div className="content-body">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route
               path="/dashboard"
-              element={<Dashboard onOpenExcelModal={() => setIsExcelModalOpen(true)} />}
+              element={
+                <Dashboard
+                  onOpenExcelModal={() => setIsExcelModalOpen(true)}
+                  onOpenAddIpoModal={() => setIsAddIpoModalOpen(true)}
+                />
+              }
             />
             <Route
               path="/customers"
               element={<Customers onOpenExcelModal={() => setIsExcelModalOpen(true)} />}
             />
-            <Route path="/ipos" element={<IpoMaster />} />
+            <Route
+              path="/ipos"
+              element={<IpoMaster onOpenAddIpoModal={() => setIsAddIpoModalOpen(true)} />}
+            />
             <Route path="/applications" element={<Applications />} />
             <Route path="/payments" element={<Payments />} />
             <Route path="/reports" element={<Reports />} />
@@ -82,6 +89,11 @@ export default function App() {
       <ExcelImportModal
         isOpen={isExcelModalOpen}
         onClose={() => setIsExcelModalOpen(false)}
+      />
+
+      <AddIpoModal
+        isOpen={isAddIpoModalOpen}
+        onClose={() => setIsAddIpoModalOpen(false)}
       />
     </div>
   );

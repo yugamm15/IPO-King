@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layers, Plus } from 'lucide-react';
 
-export default function IpoMaster() {
+export default function IpoMaster({ onOpenAddIpoModal }) {
   return (
     <div className="tab-pane active">
       <div className="welcome-header">
@@ -10,7 +10,7 @@ export default function IpoMaster() {
           <p>Create IPOs, manage price bands, and trigger automated listing profit calculation</p>
         </div>
         <div className="quick-actions">
-          <button className="btn btn-primary">
+          <button className="btn btn-primary" onClick={onOpenAddIpoModal}>
             <Plus size={16} /> Create New IPO
           </button>
         </div>

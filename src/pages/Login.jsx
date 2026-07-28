@@ -219,11 +219,6 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
   return (
     <div className="auth-wrapper">
       <div className="auth-card glass-panel">
-        <button type="button" className="theme-toggle-btn theme-toggle-fixed" onClick={onToggleTheme}>
-          {isDark ? <Sun size={14} /> : <Moon size={14} />}
-          <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
-        </button>
-
         <div className="auth-header">
           <div className="brand-badge">
             <TrendingUp className="brand-icon" />
