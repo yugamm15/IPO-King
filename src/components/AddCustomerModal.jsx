@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, AlertTriangle, CheckCircle, UploadCloud, FileText, Image as ImageIcon, X, Plus } from 'lucide-react';
 import { supabase } from '../services/db';
 
-export default function AddCustomerModal({ onClose, onCustomerAdded }) {
+export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustomerNo, initialData }) {
+  const isEditMode = Boolean(initialData);
+
   const [formData, setFormData] = useState({
-    // 17 Excel Columns
     customer_no: '',
     full_name: '',
     ca_number: '',
@@ -21,14 +22,11 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
     phone_other: '',
     return_amount: '0',
     tds_remarks: '',
-    // Additional KYC
     kyc_status: 'Verified'
   });
 
-  // Multiple Beneficiaries state
   const [beneficiaries, setBeneficiaries] = useState(['']);
 
-  // Document Upload State
   const [documents, setDocuments] = useState({
     pan_card: null,
     aadhaar_card: null,
@@ -46,6 +44,46 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        customer_no: initialData.customer_no || '',
+        full_name: initialData.full_name || initialData.name || '',
+        ca_number: initialData.ca_number || '',
+        pan_number: initialData.pan_number || '',
+        dpid: initialData.dpid || '',
+        bank_account_no: initialData.bank_account_no || '',
+        login_id: initialData.login_id || '',
+        password_encrypted: initialData.password_encrypted || '',
+        code: initialData.code || '',
+        mobile_number: initialData.mobile_number || '',
+        balance: initialData.balance !== undefined ? String(initialData.balance) : '0',
+        phone_alternate: initialData.phone_alternate || '',
+        email: initialData.email || '',
+        phone_other: initialData.phone_other || '',
+        return_amount: initialData.return_amount !== undefined ? String(initialData.return_amount) : '0',
+        tds_remarks: initialData.tds_remarks || '',
+        kyc_status: initialData.kyc_status || 'Verified'
+      });
+
+      if (initialData.beneficiary_name) {
+        const bList = String(initialData.beneficiary_name).split(',').map(b => b.trim()).filter(Boolean);
+        setBeneficiaries(bList.length > 0 ? bList : ['']);
+      }
+
+      if (initialData.documents && typeof initialData.documents === 'object') {
+        setDocPreviews(initialData.documents);
+      }
+    } else {
+      const targetNo = nextCustomerNo || 1;
+      setFormData(prev => ({
+        ...prev,
+        customer_no: targetNo,
+        code: prev.code || `IPO-${String(targetNo).padStart(3, '0')}`
+      }));
+    }
+  }, [initialData, nextCustomerNo]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -143,6 +181,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
 
     try {
       const uploadedDocUrls = await uploadDocsToBucket(formData.pan_number);
+      const docJsonString = Object.keys(uploadedDocUrls).length > 0 ? JSON.stringify(uploadedDocUrls) : null;
 
       const payload = {
         customer_no: parseInt(formData.customer_no, 10) || null,
@@ -164,68 +203,110 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
         tds_remarks: formData.tds_remarks.trim() || null,
         beneficiary_name: beneficiaryString || null,
         kyc_status: formData.kyc_status || 'Verified',
-        documents: uploadedDocUrls
+        address: docJsonString
       };
 
-      const { data, error } = await supabase.from('customers').insert([payload]).select();
-
-      if (error) {
-        console.warn('Supabase customer insert note:', error.message);
+      let data, error;
+      if (isEditMode && initialData.id) {
+        const res = await supabase.from('customers').update(payload).eq('id', initialData.id).select();
+        data = res.data;
+        error = res.error;
+      } else {
+        const res = await supabase.from('customers').insert([payload]).select();
+        data = res.data;
+        error = res.error;
       }
 
-      setSuccessMsg('Customer and multiple beneficiaries added successfully!');
+      if (error) {
+        console.error('Supabase customer save error:', error);
+        setErrorMsg(`Database error: ${error.message || 'Could not save record.'}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const savedCust = (data && data[0]) ? data[0] : null;
+      const targetCustId = savedCust ? savedCust.id : initialData?.id;
+
+      if (targetCustId) {
+        // 1. Save into customer_beneficiaries table
+        if (validBeneficiaries.length > 0) {
+          try {
+            if (isEditMode) {
+              await supabase.from('customer_beneficiaries').delete().eq('customer_id', targetCustId);
+            }
+            const bPayloads = validBeneficiaries.map((bName) => ({
+              customer_id: targetCustId,
+              beneficiary_name: bName
+            }));
+            await supabase.from('customer_beneficiaries').insert(bPayloads);
+          } catch (bErr) {
+            console.warn('Note on customer_beneficiaries relational insert:', bErr);
+          }
+        }
+
+        // 2. Save into customer_documents table
+        if (Object.keys(uploadedDocUrls).length > 0) {
+          try {
+            if (isEditMode) {
+              await supabase.from('customer_documents').delete().eq('customer_id', targetCustId);
+            }
+            const dPayloads = Object.entries(uploadedDocUrls).map(([dType, dUrl]) => ({
+              customer_id: targetCustId,
+              document_type: dType,
+              file_name: `${dType}_proof`,
+              file_path: String(dUrl)
+            }));
+            await supabase.from('customer_documents').insert(dPayloads);
+          } catch (dErr) {
+            console.warn('Note on customer_documents relational insert:', dErr);
+          }
+        }
+      }
+
+      setSuccessMsg(isEditMode ? 'Customer details updated across all tables!' : 'Customer added across all database tables!');
       
-      const newCust = (data && data[0]) ? { ...data[0], documents: uploadedDocUrls } : payload;
+      const newCust = savedCust ? { ...savedCust, documents: uploadedDocUrls } : { ...payload, id: targetCustId, documents: uploadedDocUrls };
       if (onCustomerAdded) {
-        onCustomerAdded(newCust);
+        onCustomerAdded(newCust, isEditMode);
       }
 
       setTimeout(() => {
         onClose();
       }, 1000);
     } catch (err) {
-      console.error('Add customer error:', err);
-      if (onCustomerAdded) {
-        onCustomerAdded({
-          ...formData,
-          pan_number: formData.pan_number.trim().toUpperCase(),
-          beneficiary_name: beneficiaryString,
-          documents: docPreviews
-        });
-      }
-      setSuccessMsg('Customer added to list successfully!');
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+      console.error('Save customer exception:', err);
+      setErrorMsg(`Save failed: ${err.message || 'Server error'}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose} style={{
+    <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(5px)',
+      background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px'
-    }}>
-      <div className="email-modal-card glass-panel" onClick={(e) => e.stopPropagation()} style={{
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
         maxWidth: '860px', width: '100%', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid var(--border-color)'
+        boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)', border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#0F172A'
       }}>
-        <div className="email-modal-header" style={{
-          padding: '16px 24px', borderBottom: '1px solid var(--border-color)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--card-bg)'
+        <div style={{
+          padding: '18px 24px', borderBottom: '1px solid #E2E8F0',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF',
+          borderTopLeftRadius: '16px', borderTopRightRadius: '16px'
         }}>
-          <div className="email-meta" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={22} className="brand-icon" style={{ color: '#2563EB' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Users size={22} />
+            </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--text-main)' }}>Add New Customer</h3>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-dim)' }}>All 17 Excel fields + Multiple Beneficiaries + Document Buckets</p>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+                {isEditMode ? 'Edit Customer Details' : 'Add New Customer'}
+              </h3>
             </div>
           </div>
-          <button className="btn-close" onClick={onClose} style={{
-            background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--text-dim)'
-          }}>&times;</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748B', lineHeight: 1 }}>&times;</button>
         </div>
 
         <form onSubmit={handleSubmit} style={{ padding: '20px 24px' }}>
@@ -243,11 +324,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
             </div>
           )}
 
-          {/* Section 1: Standard 17 Excel Fields */}
+          {/* Section 1: Customer Fields */}
           <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#2563EB', marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-              📋 17 Excel Columns Data
-            </h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
               {/* 1. NO. */}
@@ -395,7 +473,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
           {/* Section 3: Document Picture Uploads to Database Buckets */}
           <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed var(--border-color)' }}>
             <h4 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#2563EB', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              🖼️ Document Pictures (Saved to Database Buckets)
+              🖼️ Document Pictures
             </h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
@@ -490,7 +568,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded }) {
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ background: '#2563EB', color: '#fff' }}>
-              {isSubmitting ? 'Saving Customer & Documents...' : 'Save Customer Profile'}
+              {isSubmitting ? 'Saving Customer & Documents...' : (isEditMode ? 'Update Customer Profile' : 'Save Customer Profile')}
             </button>
           </div>
         </form>

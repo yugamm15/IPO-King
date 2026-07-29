@@ -3,9 +3,9 @@ import { Users, FileCheck2, Coins, Percent, TrendingUp, Calculator, History, Dow
 import { fetchLiveIpos, fetchApplicationsLedger, fetchDashboardStats, subscribeToRealtimeChanges } from '../services/db.js';
 
 export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
-  const [allotPrice, setAllotPrice] = useState(500);
-  const [listPrice, setListPrice] = useState(850);
-  const [qty, setQty] = useState(100);
+  const [allotPrice, setAllotPrice] = useState(0);
+  const [listPrice, setListPrice] = useState(0);
+  const [qty, setQty] = useState(0);
 
   const [stats, setStats] = useState({
     totalCustomers: '0',
@@ -51,8 +51,12 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
     };
   }, []);
 
-  const profitPerShare = listPrice - allotPrice;
-  const totalProfit = profitPerShare * qty;
+  const numAllot = Number(allotPrice) || 0;
+  const numList = Number(listPrice) || 0;
+  const numQty = Number(qty) || 0;
+
+  const profitPerShare = numList - numAllot;
+  const totalProfit = profitPerShare * numQty;
   const custShare = totalProfit * 0.40;
   const compShare = totalProfit * 0.60;
   const tds = custShare * 0.10;
@@ -185,15 +189,15 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
           <div className="calculator-box">
             <div className="calc-group">
               <label>Allotment Price (₹)</label>
-              <input type="number" value={allotPrice} onChange={(e) => setAllotPrice(Number(e.target.value))} />
+              <input type="number" value={allotPrice} onChange={(e) => setAllotPrice(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
             <div className="calc-group">
               <label>Listing Price (₹)</label>
-              <input type="number" value={listPrice} onChange={(e) => setListPrice(Number(e.target.value))} />
+              <input type="number" value={listPrice} onChange={(e) => setListPrice(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
             <div className="calc-group">
               <label>Allotted Quantity (Shares)</label>
-              <input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+              <input type="number" value={qty} onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
 
             <div className="calc-results">
