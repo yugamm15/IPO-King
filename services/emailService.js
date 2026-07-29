@@ -271,27 +271,7 @@ function buildSmtpConfig() {
   const smtpUser = getFirstEnvValue('SMTP_USER', 'SMTP_USERNAME');
   const smtpPass = sanitizeAppPassword(getFirstEnvValue('SMTP_PASS', 'SMTP_PASSWORD'));
 
-  if (smtpUser && smtpPass) {
-    return {
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      },
-      connectionTimeout: 15000,
-      socketTimeout: 15000,
-      greetingTimeout: 10000,
-      pool: true,
-      maxConnections: 1,
-      maxMessages: 10,
-      rateDelta: 1000,
-      rateLimit: 5
-    };
-  }
-
-  if (smtpUser === '' && smtpPass === '') {
+  if (!smtpUser || !smtpPass) {
     return null;
   }
 
@@ -299,9 +279,18 @@ function buildSmtpConfig() {
     host: smtpHost,
     port: smtpPort,
     secure: smtpSecure,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass
+    },
     connectionTimeout: 15000,
     socketTimeout: 15000,
-    greetingTimeout: 10000
+    greetingTimeout: 10000,
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 10,
+    rateDelta: 1000,
+    rateLimit: 5
   };
 }
 
