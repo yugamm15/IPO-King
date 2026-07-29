@@ -348,9 +348,7 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
   const subject = '🔐 Your IPO KING Security Verification Code';
   const htmlBody = generate2FAEmailTemplate(realOtpCode, userName, decoyOtpCode);
 
-  console.log(`\n=============================================================`);
-  console.log(`🔑 [2FA OTP GENERATED] for ${toEmail}: ${realOtpCode}`);
-  console.log(`=============================================================\n`);
+  console.log(`[Email] Sending 2FA security OTP email to: ${toEmail}`);
 
   const errors = [];
 
@@ -385,6 +383,8 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
       const fromAddress = getFirstEnvValue('SMTP_FROM_EMAIL') || smtpConfig.auth?.user || (smtpUser || 'noreply@ipoking.com');
       const fromDisplayName = process.env.SMTP_FROM_NAME || 'IPO KING Auth';
       await transporter.verify();
+      console.log(`[Email Debug] Sending email strictly to: ${toEmail}`);
+      console.log(`[Email Debug] Mail options:`, { from: `"${fromDisplayName}" <${fromAddress}>`, to: toEmail, subject });
       const info = await transporter.sendMail({
         from: `"${fromDisplayName}" <${fromAddress}>`,
         to: toEmail,
@@ -406,7 +406,6 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
 
   if (!shouldAllowTestFallback()) {
     console.error(`[Email] ❌ Real delivery failed and test fallback is disabled for ${toEmail}.`);
-    console.error(`[Email] 📌 OTP code for manual use: ${otpCode}`);
     return {
       success: false,
       otpCode: realOtpCode,
@@ -465,11 +464,10 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
   }
 
   console.error(`[Email] ❌ All delivery methods failed for ${toEmail}.`);
-  console.error(`[Email] 📌 OTP code for manual use: ${otpCode}`);
   return {
     success: false,
-    otpCode,
+    otpCode: realOtpCode,
     errors,
-    note: `All email providers failed. OTP code for manual verification: ${otpCode}`
+    note: 'All email providers failed. Check SMTP configuration.'
   };
 }

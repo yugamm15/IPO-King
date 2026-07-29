@@ -23,7 +23,7 @@ export default function Sidebar({ onLogout, user, initials }) {
         </NavLink>
         <NavLink to="/customers" className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}>
           <Users size={18} />
-          <span>Customers (17 Fields)</span>
+          <span>Customers</span>
         </NavLink>
         <NavLink to="/ipos" className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}>
           <Layers size={18} />

@@ -192,7 +192,7 @@ async function requestOtpHandler(req, res) {
     role: 'admin'
   });
 
-  console.log(`[API /request-otp] Sending OTP to: ${loginEmail} (Real: ${realOtpCode}, Decoy: ${decoyOtpCode})`);
+  console.log(`[API /request-otp] Requesting OTP delivery for: ${loginEmail}`);
 
   let emailResult;
   try {
@@ -205,7 +205,7 @@ async function requestOtpHandler(req, res) {
     emailResult = {
       success: false,
       otpCode: realOtpCode,
-      note: `Exception in email sender. OTP for manual use: ${realOtpCode}`
+      note: `Exception in email sender for: ${loginEmail}`
     };
   }
 
@@ -359,7 +359,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
 
   otpStore.set(email.toLowerCase(), { otpCode, expiresAt });
 
-  console.log(`[API /send-otp] Sending 2FA Email to: ${email} (Code: ${otpCode})`);
+  console.log(`[API /send-otp] Sending 2FA Email to: ${email}`);
 
   let emailResult;
   try {
@@ -369,7 +369,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
     emailResult = {
       success: false,
       otpCode,
-      note: `Exception in email sender. OTP for manual use: ${otpCode}`
+      note: `Exception in email sender for: ${email}`
     };
   }
 

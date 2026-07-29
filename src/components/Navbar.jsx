@@ -22,7 +22,7 @@ export default function Navbar({ onLogout, user, initials }) {
           </NavLink>
           <NavLink to="/customers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Users size={16} />
-            <span>Customers (17 Fields)</span>
+            <span>Customers</span>
           </NavLink>
           <NavLink to="/ipos" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Layers size={16} />
