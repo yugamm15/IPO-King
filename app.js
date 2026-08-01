@@ -135,6 +135,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Verify entered OTP strictly matches the real generated OTP
+            if (enteredOtp !== currentOtp) {
+                alert("Invalid OTP code. Please check your email and try again.");
+                return;
+            }
+
             // Success Verification
             clearInterval(timerInterval);
             authContainer.style.display = 'none';

