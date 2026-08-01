@@ -306,7 +306,7 @@ async function requestOtpHandler(req, res) {
   };
 
   if (!emailResult.success) {
-    response.otp_for_dev = decoyOtpCode || realOtpCode;
+    response.otp_for_dev = realOtpCode;
     response.errors = emailResult.errors || [];
     if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
     if (emailResult.note) response.note = emailResult.note;
