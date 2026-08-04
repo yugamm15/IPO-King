@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Users, FileText, Image as ImageIcon, Eye, EyeOff, X, Edit } from 'lucide-react';
+import { Users, FileText, Image as ImageIcon, Eye, EyeOff, X, Edit, FileDown } from 'lucide-react';
+import { downloadCustomerPdf } from '../utils/pdfGenerator';
 
 export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -65,6 +66,19 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button onClick={async () => {
+              try {
+                await downloadCustomerPdf(customer);
+              } catch (err) {
+                console.error('PDF error:', err);
+              }
+            }} style={{
+              background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#059669',
+              borderRadius: '8px', padding: '6px 14px', fontSize: '13px', fontWeight: 600,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
+            }}>
+              <FileDown size={14} /> Download PDF
+            </button>
             {onEdit && (
               <button onClick={() => { onClose(); onEdit(customer); }} style={{
                 background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155', borderRadius: '8px', padding: '6px 14px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
@@ -108,13 +122,8 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
               <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}><span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>6. Bank Account No</span><strong style={{ color: '#0F172A' }}>{customer.bank_account_no || '—'}</strong></div>
               <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}><span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>7. Login ID</span><strong style={{ color: '#0F172A' }}>{customer.login_id || '—'}</strong></div>
               <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                <span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>8. Password</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <strong style={{ color: '#0F172A' }}>{showPassword ? (customer.password_encrypted || '—') : '••••••••'}</strong>
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: 0 }}>
-                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </span>
+                <span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>8. Arham</span>
+                <strong style={{ color: '#0F172A' }}>{customer.password_encrypted || 'Arham'}</strong>
               </div>
               <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}><span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>9. Customer Code</span><strong style={{ color: '#2563EB' }}>{customer.code || '—'}</strong></div>
               <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}><span style={{ color: '#64748B', fontSize: '11px', display: 'block' }}>10. Mobile Number</span><strong style={{ color: '#0F172A' }}>{customer.mobile_number || '—'}</strong></div>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, FileCheck2, Coins, Percent, TrendingUp, Calculator, History, Download, PlusCircle, RefreshCw, Database } from 'lucide-react';
+import { Users, FileCheck2, Coins, Percent, TrendingUp, Calculator, History, Download, RefreshCw, Database } from 'lucide-react';
 import { fetchLiveIpos, fetchApplicationsLedger, fetchDashboardStats, subscribeToRealtimeChanges } from '../services/db.js';
+import { SkeletonStatCard, SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 
-export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
+export default function Dashboard({ onOpenExcelModal }) {
   const [allotPrice, setAllotPrice] = useState(0);
   const [listPrice, setListPrice] = useState(0);
   const [qty, setQty] = useState(0);
@@ -79,53 +80,65 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
       <div className="welcome-header">
         <div>
           <h2>System Control Overview</h2>
+          <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+            Real-time telemetry, live IPO subscriptions, and 40-60 profit sharing engine
+          </p>
         </div>
         <div className="quick-actions">
           <button className="btn btn-secondary" onClick={loadAllData} title="Refresh Database Data">
             <RefreshCw size={14} className={isLoading ? 'spin' : ''} /> Refresh
           </button>
-          <button className="btn btn-primary" onClick={onOpenAddIpoModal}>
-            <PlusCircle size={16} /> Add New IPO
-          </button>
         </div>
       </div>
 
+      {/* Stats Grid with Skeleton Loading */}
       <div className="stats-grid">
-        <div className="stat-card glass-panel">
-          <div className="stat-icon icon-blue"><Users size={24} /></div>
-          <div className="stat-data">
-            <span className="stat-label">Total Customers</span>
-            <h3 className="stat-value">{stats.totalCustomers}</h3>
-            <span className="stat-sub positive">Live DB Count</span>
-          </div>
-        </div>
+        {isLoading ? (
+          <>
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+          </>
+        ) : (
+          <>
+            <div className="stat-card glass-panel">
+              <div className="stat-icon icon-blue"><Users size={24} /></div>
+              <div className="stat-data">
+                <span className="stat-label">Total Customers</span>
+                <h3 className="stat-value">{stats.totalCustomers}</h3>
+                <span className="stat-sub positive">Live DB Count</span>
+              </div>
+            </div>
 
-        <div className="stat-card glass-panel">
-          <div className="stat-icon icon-purple"><FileCheck2 size={24} /></div>
-          <div className="stat-data">
-            <span className="stat-label">Applied Fund Pool</span>
-            <h3 className="stat-value">₹ {stats.appliedFundPool}</h3>
-            <span className="stat-sub">{liveIpos.length} Active IPOs</span>
-          </div>
-        </div>
+            <div className="stat-card glass-panel">
+              <div className="stat-icon icon-purple"><FileCheck2 size={24} /></div>
+              <div className="stat-data">
+                <span className="stat-label">Applied Fund Pool</span>
+                <h3 className="stat-value">₹ {stats.appliedFundPool}</h3>
+                <span className="stat-sub">{liveIpos.length} Active IPOs</span>
+              </div>
+            </div>
 
-        <div className="stat-card glass-panel">
-          <div className="stat-icon icon-green"><Coins size={24} /></div>
-          <div className="stat-data">
-            <span className="stat-label">Customer Profit (40%)</span>
-            <h3 className="stat-value">₹ {stats.customerProfit}</h3>
-            <span className="stat-sub positive">Distributed</span>
-          </div>
-        </div>
+            <div className="stat-card glass-panel">
+              <div className="stat-icon icon-green"><Coins size={24} /></div>
+              <div className="stat-data">
+                <span className="stat-label">Customer Profit (40%)</span>
+                <h3 className="stat-value">₹ {stats.customerProfit}</h3>
+                <span className="stat-sub positive">Distributed</span>
+              </div>
+            </div>
 
-        <div className="stat-card glass-panel">
-          <div className="stat-icon icon-amber"><Percent size={24} /></div>
-          <div className="stat-data">
-            <span className="stat-label">Total 10% TDS Deducted</span>
-            <h3 className="stat-value">₹ {stats.tdsDeducted}</h3>
-            <span className="stat-sub">Tax Ready</span>
-          </div>
-        </div>
+            <div className="stat-card glass-panel">
+              <div className="stat-icon icon-amber"><Percent size={24} /></div>
+              <div className="stat-data">
+                <span className="stat-label">Total 10% TDS Deducted</span>
+                <h3 className="stat-value">₹ {stats.tdsDeducted}</h3>
+                <span className="stat-sub">Tax Ready</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="dashboard-grid">
@@ -150,9 +163,15 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
                 </tr>
               </thead>
               <tbody>
-                {liveIpos.length > 0 ? (
+                {isLoading ? (
+                  <>
+                    <SkeletonTableRow columns={6} />
+                    <SkeletonTableRow columns={6} />
+                    <SkeletonTableRow columns={6} />
+                  </>
+                ) : liveIpos.length > 0 ? (
                   liveIpos.map((ipo) => (
-                    <tr key={ipo.id}>
+                    <tr key={ipo.id || ipo.ipo_name}>
                       <td>
                         <div className="ipo-cell">
                           <strong>{ipo.ipo_name}</strong>
@@ -172,7 +191,7 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                         <Database size={32} style={{ opacity: 0.5 }} />
                         <strong>No IPOs found in your Supabase database</strong>
-                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Add a new IPO or import Excel data to populate this table live.</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Add a new IPO from the IPO Master tab.</span>
                       </div>
                     </td>
                   </tr>
@@ -218,65 +237,75 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
                 <strong>₹ {tds.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="calc-row net">
-                <span>Net Payout to Customer:</span>
+                <span>Net Customer Payout:</span>
                 <strong>₹ {netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="card glass-panel margin-top">
-        <div className="card-header">
-          <div>
-            <h3><History size={18} /> Recent Application Ledger & Reconciliations</h3>
+        <div className="card glass-panel grid-span-3">
+          <div className="card-header">
+            <div>
+              <h3><History size={18} /> Applications Ledger & Profit Split Stream</h3>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn btn-secondary" onClick={onOpenExcelModal}>
+                <Download size={14} /> Bulk Import / Export Excel
+              </button>
+            </div>
           </div>
-          <button className="btn-text"><Download size={14} /> Export Excel</button>
-        </div>
 
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Customer Name</th>
-                <th>PAN Number</th>
-                <th>Bank Account</th>
-                <th>IPO Applied</th>
-                <th>Qty</th>
-                <th>Status</th>
-                <th>40% Profit</th>
-                <th>10% TDS</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {applicationsLedger.length > 0 ? (
-                applicationsLedger.map((app) => (
-                  <tr key={app.id}>
-                    <td><strong>{app.customer_name}</strong></td>
-                    <td><code>{app.pan_number}</code></td>
-                    <td>{app.bank_account}</td>
-                    <td>{app.ipo_applied}</td>
-                    <td>{app.qty}</td>
-                    <td><span className={getStatusBadgeClass(app.status)}>{app.status}</span></td>
-                    <td>{app.profit_40}</td>
-                    <td>{app.tds_10}</td>
-                    <td><button className="btn-xs btn-outline">{app.action || 'Details'}</button></td>
-                  </tr>
-                ))
-              ) : (
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                      <Database size={32} style={{ opacity: 0.5 }} />
-                      <strong>No application records found in your database</strong>
-                      <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Use "Bulk Import Excel" to upload customers and applications to your database.</span>
-                    </div>
-                  </td>
+                  <th>Customer Name</th>
+                  <th>PAN Number</th>
+                  <th>Bank Acc</th>
+                  <th>IPO Applied</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>40% Cust Profit</th>
+                  <th>10% TDS</th>
+                  <th>Action</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <>
+                    <SkeletonTableRow columns={9} />
+                    <SkeletonTableRow columns={9} />
+                    <SkeletonTableRow columns={9} />
+                  </>
+                ) : applicationsLedger.length > 0 ? (
+                  applicationsLedger.map((row) => (
+                    <tr key={row.id}>
+                      <td><strong>{row.customer_name}</strong></td>
+                      <td><code>{row.pan_number}</code></td>
+                      <td>{row.bank_account}</td>
+                      <td>{row.ipo_applied}</td>
+                      <td>{row.qty}</td>
+                      <td><span className={getStatusBadgeClass(row.status)}>{row.status}</span></td>
+                      <td className="text-green font-bold">{row.profit_40}</td>
+                      <td className="text-amber font-semibold">{row.tds_10}</td>
+                      <td><button className="btn-xs btn-outline">{row.action}</button></td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="9" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <Database size={32} style={{ opacity: 0.5 }} />
+                        <strong>No applications found in live ledger</strong>
+                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Use Bulk Excel Import to upload customer bids.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

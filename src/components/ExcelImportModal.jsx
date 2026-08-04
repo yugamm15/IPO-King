@@ -1,7 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { FileSpreadsheet, UploadCloud, Download, FileText, X } from 'lucide-react';
+import { useToast } from '../context/ToastContext.jsx';
 
 export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('import'); // 'import' | 'export'
   const [selectedFile, setSelectedFile] = useState(null);
   const [importStatus, setImportStatus] = useState('');
@@ -19,7 +21,7 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
 
   const handleImportSubmit = async () => {
     if (!selectedFile) {
-      alert('Please select an Excel (.xlsx, .csv) file to import.');
+      showToast('Please select an Excel (.xlsx, .csv) file to import.', 'warning');
       return;
     }
     setImportStatus('Processing Excel import into Supabase database...');
