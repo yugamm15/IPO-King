@@ -14,6 +14,8 @@ import Payments from './pages/Payments';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
+import { fetchLiveIpos, fetchApplicationsLedger, fetchCustomersShortList, fetchDashboardStats } from './services/db.js';
+
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -22,6 +24,18 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, login, logout, user } = useSession();
+
+  // Pre-warm database cache on boot for 0ms instant loading
+  useEffect(() => {
+    if (isAuthenticated) {
+      Promise.all([
+        fetchLiveIpos(),
+        fetchApplicationsLedger(),
+        fetchCustomersShortList(),
+        fetchDashboardStats()
+      ]).catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   const handleToggleTheme = () => {
     setIsDark(!isDark);
@@ -77,7 +91,10 @@ export default function App() {
               path="/ipos"
               element={<IpoMaster onOpenAddIpoModal={() => setIsAddIpoModalOpen(true)} />}
             />
-            <Route path="/applications" element={<Applications />} />
+            <Route
+              path="/applications"
+              element={<Applications onOpenExcelModal={() => setIsExcelModalOpen(true)} />}
+            />
             <Route path="/payments" element={<Payments />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<Settings />} />

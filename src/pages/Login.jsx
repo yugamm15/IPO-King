@@ -220,10 +220,8 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
     <div className="auth-wrapper">
       <div className="auth-card glass-panel">
         <div className="auth-header">
-          <div className="brand-badge">
-            <TrendingUp className="brand-icon" />
-          </div>
-          <h1 className="brand-title">IPO KING</h1>
+          <img src="/final_logo.png" alt="IPO KING Logo" style={{ height: '160px', width: 'auto', maxHeight: '160px', objectFit: 'contain', margin: '0 auto 18px', display: 'block', filter: 'drop-shadow(0 6px 20px rgba(23, 32, 51, 0.15))' }} />
+          <h1 className="brand-title" style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: '28px', color: '#173B7A' }}>IPO KING</h1>
           <p className="brand-subtitle">Enterprise IPO &amp; Profit Management System</p>
         </div>
 
@@ -291,31 +289,31 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
 
         {step === 2 && (
           <div id="otp-step" className="auth-step active">
-            <div style={{ textAlign: 'center', marginBottom: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
-            We&apos;ve sent a 6-digit security OTP code to <strong style={{ color: 'var(--text-main)' }}>{verifiedEmail || email.trim().toLowerCase()}</strong>
+            <div style={{ textAlign: 'center', marginBottom: '18px', fontSize: '14px', color: 'var(--text-muted)' }}>
+              We&apos;ve sent a 6-digit security OTP code to <strong style={{ color: 'var(--text-main)' }}>{verifiedEmail || email.trim().toLowerCase()}</strong>
             </div>
 
             {emailNotice && (
-              <div className={`auth-banner auth-banner-${emailNotice.type === 'info' ? 'info' : 'warn'}`} style={{ marginBottom: '18px' }}>
-              <div className="auth-banner-title">
-              <AlertTriangle size={15} />
-              <strong>{emailNotice.title}</strong>
-              </div>
-              {emailNotice.lines && emailNotice.lines.map((l, i) => (
-                <div key={i} style={{ fontSize: '12px', marginTop: '4px', opacity: 0.95 }}>{l}</div>
-              ))}
-              {emailNotice.otp && (
-                <div style={{ marginTop: '10px', padding: '12px 14px', background: 'rgba(37, 99, 235, 0.12)', border: '1px dashed rgba(37, 99, 235, 0.4)', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-muted)', fontWeight: 700 }}>Your OTP Code</div>
-                <div style={{ fontSize: '30px', fontWeight: 800, letterSpacing: '10px', color: '#2563EB', fontFamily: 'monospace', marginTop: '4px' }}>{emailNotice.otp}</div>
+              <div className={`auth-banner auth-banner-${emailNotice.type === 'info' ? 'info' : 'warn'}`} style={{ marginBottom: '20px' }}>
+                <div className="auth-banner-title">
+                  <AlertTriangle size={16} />
+                  <strong>{emailNotice.title}</strong>
                 </div>
-              )}
-              {emailNotice.preview && (
-                <a href={emailNotice.preview} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '10px', fontSize: '12px', color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}>
-                  <ExternalLink size={13} /> Preview the test email
-                </a>
-              )}
-            </div>
+                {emailNotice.lines && emailNotice.lines.map((l, i) => (
+                  <div key={i} style={{ fontSize: '12px', marginTop: '4px', opacity: 0.95 }}>{l}</div>
+                ))}
+                {emailNotice.otp && (
+                  <div style={{ marginTop: '14px', padding: '14px 16px', background: '#EEF3FF', border: '1px dashed #2457C5', borderRadius: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#667085', fontWeight: 700 }}>Your Security OTP Code</div>
+                    <div style={{ fontSize: '32px', fontWeight: 800, letterSpacing: '10px', color: '#2457C5', fontFamily: 'monospace', marginTop: '4px' }}>{emailNotice.otp}</div>
+                  </div>
+                )}
+                {emailNotice.preview && (
+                  <a href={emailNotice.preview} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '12px', fontSize: '12px', color: '#2457C5', textDecoration: 'none', fontWeight: 600 }}>
+                    <ExternalLink size={13} /> Preview test email
+                  </a>
+                )}
+              </div>
             )}
 
             {authError && (
@@ -374,10 +372,6 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
             </div>
           </div>
         )}
-
-        <div className="auth-footer">
-          <p><Lock size={12} /> 256-Bit SSL Encrypted Enterprise Connection</p>
-        </div>
       </div>
     </div>
   );

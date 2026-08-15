@@ -23,8 +23,10 @@ import { useToast } from '../context/ToastContext.jsx';
 
 export default function IpoMaster() {
   const { showToast, showConfirm } = useToast();
-  const [ipos, setIpos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [ipos, setIpos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ipoking_cache_ipos')) || []; } catch(e) { return []; }
+  });
+  const [loading, setLoading] = useState(() => !ipos || ipos.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,14 +34,15 @@ export default function IpoMaster() {
   const [listingModalIpo, setListingModalIpo] = useState(null);
   const [customListingPrice, setCustomListingPrice] = useState('');
 
-  const loadIpos = async () => {
-    setLoading(true);
+  const loadIpos = async (force = false) => {
+    if (!ipos || ipos.length === 0) {
+      setLoading(true);
+    }
     try {
-      const data = await fetchLiveIpos();
+      const data = await fetchLiveIpos(force);
       setIpos(data || []);
     } catch (err) {
       console.error('Error fetching IPO Master catalog:', err);
-      setIpos([]);
     } finally {
       setLoading(false);
     }
@@ -152,7 +155,7 @@ export default function IpoMaster() {
       case 'open': return 'status-badge open';
       case 'upcoming': return 'status-badge upcoming';
       case 'listed': return 'status-badge listed';
-      case 'closed': return 'status-badge partial';
+      case 'closed': return 'status-badge closed';
       default: return 'status-badge open';
     }
   };
@@ -169,7 +172,7 @@ export default function IpoMaster() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={loadIpos} title="Refresh Database Data">
+          <button className="btn btn-secondary" onClick={() => loadIpos(true)} title="Refresh Database Data">
             <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
           </button>
 

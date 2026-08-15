@@ -14,21 +14,21 @@ export default function Payments() {
     try {
       const data = await fetchApplicationsLedger();
       const mapped = (data || []).map((app, idx) => {
-        const amountNum = Number(String(app.profit_40 || '0').replace(/[^0-9.]/g, '')) * 2.5 || 15000;
-        const profit40 = amountNum * 0.40;
-        const tds10 = profit40 * 0.10;
-        const netPayout = profit40 - tds10;
+        const gross = Number(app.profit_amount) || (Number(app.lots_applied || 1) * 15000 * 0.20);
+        const clientProfit = Number(app.client_share_60) || Math.round(gross * 0.60);
+        const tds10 = Number(app.tds_10) || Math.round(gross * 0.10);
+        const netPayout = clientProfit > 0 ? (clientProfit - tds10) : 0;
 
         return {
           txn_id: `TXN-${8800 + idx + 1}`,
           customer: app.customer_name,
           beneficiary: `${app.customer_name} (${app.bank_account || 'Bank A/C'})`,
-          txn_type: 'Profit Distribution (40-60 Split)',
-          gross_amount: `₹ ${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-          profit_40: `₹ ${profit40.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          txn_type: `Profit Distribution (${app.allotted_quantity ? app.allotted_quantity + ' sh Allocated' : '40-60 Split'})`,
+          gross_amount: `₹ ${gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          profit_40: `₹ ${clientProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
           tds_10: `₹ ${tds10.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
           net_payout: `₹ ${netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-          status: 'Verified & Audited'
+          status: app.allotment_status || 'Verified & Audited'
         };
       });
       setPayments(mapped);

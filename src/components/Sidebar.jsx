@@ -8,10 +8,10 @@ export default function Sidebar({ onLogout, user, initials }) {
 
   return (
     <aside className="sidebar glass-panel">
-      <div className="sidebar-brand">
-        <TrendingUp className="brand-icon" />
+      <div className="sidebar-brand" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <img src="/final_logo.png" alt="IPO KING Logo" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
         <div className="brand-details">
-          <span className="brand-name">IPO KING</span>
+          <span className="brand-name" style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: '18px' }}>IPO KING</span>
           <span className="brand-badge-sm">ADMIN v1.0</span>
         </div>
       </div>

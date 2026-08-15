@@ -526,6 +526,62 @@ app.post('/api/v1/allotments/calculate-profit', (req, res) => {
   });
 });
 
+app.post('/api/v1/applications/create', async (req, res) => {
+  const { customer_id, ipo_id, category, quantity, bid_amount, allotment_status } = req.body || {};
+
+  // Backend Validation 1: Required Parameters
+  if (!customer_id) return fail(res, 'Validation Error: customer_id is required.', 400);
+  if (!ipo_id) return fail(res, 'Validation Error: ipo_id is required.', 400);
+
+  // Backend Validation 2: Data Range & Sanity
+  const qty = parseInt(quantity, 10) || 1;
+  const bidAmt = parseFloat(bid_amount) || 15000;
+  if (qty <= 0) return fail(res, 'Validation Error: quantity must be greater than 0.', 400);
+  if (bidAmt < 0) return fail(res, 'Validation Error: bid_amount cannot be negative.', 400);
+
+  try {
+    // Backend Validation 3: Duplicate Application Check (Server-Side)
+    const { data: existing } = await supabase
+      .from('applications')
+      .select('id')
+      .eq('customer_id', customer_id)
+      .eq('ipo_id', ipo_id)
+      .maybeSingle();
+
+    if (existing) {
+      return fail(res, 'This customer has already applied for this IPO offering!', 400);
+    }
+
+    const payload = {
+      customer_id,
+      ipo_id,
+      application_number: 'APP-' + Math.floor(100000 + Math.random() * 900000),
+      category: category || 'RETAIL',
+      quantity: qty,
+      bid_amount: bidAmt,
+      allotment_status: allotmentStatus || 'Pending'
+    };
+
+    const { data, error } = await supabase
+      .from('applications')
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        return fail(res, 'Database Constraint: This customer has already applied for this IPO offering!', 400);
+      }
+      return fail(res, error.message || 'Failed to create application bid.', 500);
+    }
+
+    return ok(res, { message: 'Application bid created successfully.', data });
+  } catch (err) {
+    console.error('[API Server] create application error:', err);
+    return fail(res, err.message || 'Server error creating application.', 500);
+  }
+});
+
 app.get('/api', (req, res) => {
   res.json({
     status: 'online',
@@ -535,6 +591,7 @@ app.get('/api', (req, res) => {
       'POST /api/v1/auth/send-otp',
       'POST /api/v1/auth/verify-otp',
       'GET  /api/v1/ipos/live',
+      'POST /api/v1/applications/create',
       'POST /api/v1/allotments/calculate-profit'
     ]
   });

@@ -8,30 +8,33 @@ export default function Dashboard({ onOpenExcelModal }) {
   const [listPrice, setListPrice] = useState(0);
   const [qty, setQty] = useState(0);
 
-  const [stats, setStats] = useState({
-    totalCustomers: '0',
-    appliedFundPool: '0.00',
-    customerProfit: '0.00',
-    tdsDeducted: '0.00'
+  const [stats, setStats] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ipoking_cache_stats')) || { totalCustomers: 0, appliedFundPool: '0.00', customerProfit: '0.00', tdsDeducted: '0.00' }; } catch(e) { return { totalCustomers: 0, appliedFundPool: '0.00', customerProfit: '0.00', tdsDeducted: '0.00' }; }
   });
 
-  const [liveIpos, setLiveIpos] = useState([]);
-  const [applicationsLedger, setApplicationsLedger] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const [liveIpos, setLiveIpos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ipoking_cache_ipos')) || []; } catch(e) { return []; }
+  });
 
-  const loadAllData = async () => {
-    setIsLoading(true);
+  const [applicationsLedger, setApplicationsLedger] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ipoking_cache_applications')) || []; } catch(e) { return []; }
+  });
+
+  const [isLoading, setIsLoading] = useState(() => !liveIpos || liveIpos.length === 0);
+
+  const loadAllData = async (force = false) => {
+    if (!liveIpos || liveIpos.length === 0) {
+      setIsLoading(true);
+    }
     try {
       const [statsRes, iposRes, ledgerRes] = await Promise.all([
-        fetchDashboardStats(),
-        fetchLiveIpos(),
-        fetchApplicationsLedger()
+        fetchDashboardStats(force),
+        fetchLiveIpos(force),
+        fetchApplicationsLedger(force)
       ]);
-      setStats(statsRes);
-      setLiveIpos(iposRes);
-      setApplicationsLedger(ledgerRes);
-      setLastRefreshed(new Date());
+      setStats(statsRes || {});
+      setLiveIpos(iposRes || []);
+      setApplicationsLedger(ledgerRes || []);
     } catch (err) {
       console.error('Dashboard live data fetch error:', err);
     } finally {
@@ -42,7 +45,6 @@ export default function Dashboard({ onOpenExcelModal }) {
   useEffect(() => {
     loadAllData();
 
-    // Subscribe to Supabase Realtime changes
     const unsubscribe = subscribeToRealtimeChanges(() => {
       loadAllData();
     });
@@ -77,22 +79,8 @@ export default function Dashboard({ onOpenExcelModal }) {
 
   return (
     <div className="tab-pane active">
-      <div className="welcome-header">
-        <div>
-          <h2>System Control Overview</h2>
-          <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>
-            Real-time telemetry, live IPO subscriptions, and 40-60 profit sharing engine
-          </p>
-        </div>
-        <div className="quick-actions">
-          <button className="btn btn-secondary" onClick={loadAllData} title="Refresh Database Data">
-            <RefreshCw size={14} className={isLoading ? 'spin' : ''} /> Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Grid with Skeleton Loading */}
-      <div className="stats-grid">
+      {/* KPI Stats Grid */}
+      <div className="stats-grid" style={{ marginBottom: '28px' }}>
         {isLoading ? (
           <>
             <SkeletonStatCard />
@@ -102,52 +90,53 @@ export default function Dashboard({ onOpenExcelModal }) {
           </>
         ) : (
           <>
-            <div className="stat-card glass-panel">
+            <div className="stat-card">
               <div className="stat-icon icon-blue"><Users size={24} /></div>
               <div className="stat-data">
                 <span className="stat-label">Total Customers</span>
-                <h3 className="stat-value">{stats.totalCustomers}</h3>
-                <span className="stat-sub positive">Live DB Count</span>
+                <h3 className="stat-value">{stats.totalCustomers || 0}</h3>
+                <span className="stat-sub positive">Live Supabase Database</span>
               </div>
             </div>
 
-            <div className="stat-card glass-panel">
+            <div className="stat-card">
               <div className="stat-icon icon-purple"><FileCheck2 size={24} /></div>
               <div className="stat-data">
                 <span className="stat-label">Applied Fund Pool</span>
-                <h3 className="stat-value">₹ {stats.appliedFundPool}</h3>
-                <span className="stat-sub">{liveIpos.length} Active IPOs</span>
+                <h3 className="stat-value">₹ {typeof stats.totalVolume === 'number' ? stats.totalVolume.toLocaleString('en-IN') : (stats.appliedFundPool || '0')}</h3>
+                <span className="stat-sub">{liveIpos.length} Active IPO Catalog</span>
               </div>
             </div>
 
-            <div className="stat-card glass-panel">
+            <div className="stat-card">
               <div className="stat-icon icon-green"><Coins size={24} /></div>
               <div className="stat-data">
                 <span className="stat-label">Customer Profit (40%)</span>
-                <h3 className="stat-value">₹ {stats.customerProfit}</h3>
-                <span className="stat-sub positive">Distributed</span>
+                <h3 className="stat-value">₹ {typeof stats.clientEarnings === 'number' ? stats.clientEarnings.toLocaleString('en-IN') : (stats.customerProfit || '0')}</h3>
+                <span className="stat-sub positive">Distributed Earnings</span>
               </div>
             </div>
 
-            <div className="stat-card glass-panel">
+            <div className="stat-card">
               <div className="stat-icon icon-amber"><Percent size={24} /></div>
               <div className="stat-data">
                 <span className="stat-label">Total 10% TDS Deducted</span>
-                <h3 className="stat-value">₹ {stats.tdsDeducted}</h3>
-                <span className="stat-sub">Tax Ready</span>
+                <h3 className="stat-value">₹ {typeof stats.totalProfit === 'number' ? Math.round(stats.totalProfit * 0.10).toLocaleString('en-IN') : (stats.tdsDeducted || '0')}</h3>
+                <span className="stat-sub">Tax Ready Audit</span>
               </div>
             </div>
           </>
         )}
       </div>
 
-      <div className="dashboard-grid">
-        <div className="card glass-panel grid-span-2">
-          <div className="card-header">
-            <div>
-              <h3><TrendingUp size={18} /> Live IPO Catalog & Allotment Engine</h3>
-            </div>
-            <span className="pill-badge">Live Market</span>
+      {/* Main Grid: Live IPO Catalog & Profit Engine */}
+      <div className="dashboard-grid" style={{ marginBottom: '28px' }}>
+        <div className="card" style={{ padding: '24px' }}>
+          <div className="card-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, fontFamily: 'Manrope', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp size={18} style={{ color: 'var(--primary)' }} /> Live IPO Catalog &amp; Allotment Engine
+            </h3>
+            <span className="status-badge open">● LIVE MARKET</span>
           </div>
 
           <div className="table-responsive">
@@ -173,16 +162,16 @@ export default function Dashboard({ onOpenExcelModal }) {
                   liveIpos.map((ipo) => (
                     <tr key={ipo.id || ipo.ipo_name}>
                       <td>
-                        <div className="ipo-cell">
-                          <strong>{ipo.ipo_name}</strong>
-                          <span className="cell-sub">{ipo.company_name || ipo.symbol || 'NSE / BSE'}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <strong style={{ fontFamily: 'Manrope', fontSize: '0.94rem', color: 'var(--text-main)' }}>{ipo.ipo_name}</strong>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ipo.company_name || ipo.symbol || 'NSE / BSE'}</span>
                         </div>
                       </td>
-                      <td>₹{ipo.price_band_min} - ₹{ipo.price_band_max}</td>
-                      <td>{ipo.lot_size} shares</td>
-                      <td>{ipo.subscription_open_date || ipo.open_date || 'Open'}</td>
-                      <td><span className={getStatusBadgeClass(ipo.status)}>{ipo.status}</span></td>
-                      <td><span className="tag-green">{ipo.gain_est || '+₹180/sh Est.'}</span></td>
+                      <td><strong>₹{ipo.price_band_min || 0} - ₹{ipo.price_band_max || 0}</strong></td>
+                      <td>{ipo.lot_size || 1} shares</td>
+                      <td><span style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>{ipo.subscription_open_date || ipo.open_date || 'Open Now'}</span></td>
+                      <td><span className={getStatusBadgeClass(ipo.status)}>{String(ipo.status).toUpperCase()}</span></td>
+                      <td><span className="status-badge open" style={{ background: '#E8F7F1', color: '#087A55', fontWeight: 700 }}>{ipo.gain_est || '+₹150/sh Est.'}</span></td>
                     </tr>
                   ))
                 ) : (
@@ -201,111 +190,135 @@ export default function Dashboard({ onOpenExcelModal }) {
           </div>
         </div>
 
-        <div className="card glass-panel">
-          <div className="card-header">
-            <h3><Calculator size={18} /> Profit & TDS Engine</h3>
+        {/* Profit & TDS Calculator */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div className="card-header" style={{ marginBottom: '20px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, fontFamily: 'Manrope', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calculator size={18} style={{ color: 'var(--primary)' }} /> Profit &amp; TDS Engine
+            </h3>
           </div>
-          <div className="calculator-box">
-            <div className="calc-group">
-              <label>Allotment Price (₹)</label>
-              <input type="number" value={allotPrice} onChange={(e) => setAllotPrice(e.target.value === '' ? '' : Number(e.target.value))} />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Allotment Price (₹)</label>
+              <input
+                type="number"
+                className="input-field"
+                value={allotPrice}
+                onChange={(e) => setAllotPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="0"
+                style={{ height: '42px', fontWeight: 700, fontSize: '0.95rem' }}
+              />
             </div>
-            <div className="calc-group">
-              <label>Listing Price (₹)</label>
-              <input type="number" value={listPrice} onChange={(e) => setListPrice(e.target.value === '' ? '' : Number(e.target.value))} />
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Listing Price (₹)</label>
+              <input
+                type="number"
+                className="input-field"
+                value={listPrice}
+                onChange={(e) => setListPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="0"
+                style={{ height: '42px', fontWeight: 700, fontSize: '0.95rem' }}
+              />
             </div>
-            <div className="calc-group">
-              <label>Allotted Quantity (Shares)</label>
-              <input type="number" value={qty} onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))} />
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Allotted Quantity (Shares)</label>
+              <input
+                type="number"
+                className="input-field"
+                value={qty}
+                onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="0"
+                style={{ height: '42px', fontWeight: 700, fontSize: '0.95rem' }}
+              />
             </div>
 
-            <div className="calc-results">
-              <div className="calc-row">
+            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--panel-border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '8px', color: 'var(--text-muted)' }}>
                 <span>Total Profit:</span>
-                <strong>₹ {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                <strong style={{ fontFamily: 'Manrope', color: 'var(--text-main)' }}>₹ {totalProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
-              <div className="calc-row highlight">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '8px', color: '#087A55', fontWeight: 700 }}>
                 <span>Customer Share (40%):</span>
-                <strong>₹ {custShare.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                <strong style={{ fontFamily: 'Manrope' }}>₹ {custShare.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
-              <div className="calc-row">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '8px', color: 'var(--text-muted)' }}>
                 <span>Company Share (60%):</span>
-                <strong>₹ {compShare.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                <strong style={{ fontFamily: 'Manrope' }}>₹ {compShare.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
-              <div className="calc-row tax">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '12px', color: '#D99000', fontWeight: 600 }}>
                 <span>10% TDS Withheld:</span>
-                <strong>₹ {tds.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                <strong style={{ fontFamily: 'Manrope' }}>₹ {tds.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
-              <div className="calc-row net">
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 800, color: 'var(--brand-deep)', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
                 <span>Net Customer Payout:</span>
-                <strong>₹ {netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                <strong style={{ fontFamily: 'Manrope', color: 'var(--primary)' }}>₹ {netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="card glass-panel grid-span-3">
-          <div className="card-header">
-            <div>
-              <h3><History size={18} /> Applications Ledger & Profit Split Stream</h3>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-secondary" onClick={onOpenExcelModal}>
-                <Download size={14} /> Bulk Import / Export Excel
-              </button>
-            </div>
+      {/* Applications Ledger & Profit Split Stream */}
+      <div className="card" style={{ padding: '24px' }}>
+        <div className="card-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, fontFamily: 'Manrope', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <History size={18} style={{ color: 'var(--primary)' }} /> Applications Ledger &amp; Profit Split Stream
+          </h3>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-secondary" onClick={onOpenExcelModal}>
+              <Download size={14} /> Bulk Excel Import / Export
+            </button>
           </div>
+        </div>
 
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Customer Name</th>
-                  <th>PAN Number</th>
-                  <th>Bank Acc</th>
-                  <th>IPO Applied</th>
-                  <th>Qty</th>
-                  <th>Status</th>
-                  <th>40% Cust Profit</th>
-                  <th>10% TDS</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <>
-                    <SkeletonTableRow columns={9} />
-                    <SkeletonTableRow columns={9} />
-                    <SkeletonTableRow columns={9} />
-                  </>
-                ) : applicationsLedger.length > 0 ? (
-                  applicationsLedger.map((row) => (
-                    <tr key={row.id}>
-                      <td><strong>{row.customer_name}</strong></td>
-                      <td><code>{row.pan_number}</code></td>
-                      <td>{row.bank_account}</td>
-                      <td>{row.ipo_applied}</td>
-                      <td>{row.qty}</td>
-                      <td><span className={getStatusBadgeClass(row.status)}>{row.status}</span></td>
-                      <td className="text-green font-bold">{row.profit_40}</td>
-                      <td className="text-amber font-semibold">{row.tds_10}</td>
-                      <td><button className="btn-xs btn-outline">{row.action}</button></td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="9" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                        <Database size={32} style={{ opacity: 0.5 }} />
-                        <strong>No applications found in live ledger</strong>
-                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Use Bulk Excel Import to upload customer bids.</span>
-                      </div>
-                    </td>
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Customer Name</th>
+                <th>PAN Number</th>
+                <th>Bank Acc</th>
+                <th>IPO Applied</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>40% Cust Profit</th>
+                <th>10% TDS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <>
+                  <SkeletonTableRow columns={8} />
+                  <SkeletonTableRow columns={8} />
+                  <SkeletonTableRow columns={8} />
+                </>
+              ) : applicationsLedger.length > 0 ? (
+                applicationsLedger.map((row) => (
+                  <tr key={row.id}>
+                    <td><strong style={{ fontFamily: 'Manrope' }}>{row.customer_name}</strong></td>
+                    <td><code>{row.pan}</code></td>
+                    <td>{row.bank_account || '—'}</td>
+                    <td><strong style={{ color: 'var(--primary)' }}>{row.ipo_name}</strong></td>
+                    <td>{row.lots_applied} Lots</td>
+                    <td><span className={getStatusBadgeClass(row.allotment_status)}>{row.allotment_status}</span></td>
+                    <td className="text-green font-bold">₹{Number(row.client_share_60 || 0).toLocaleString()}</td>
+                    <td className="text-amber font-semibold">₹{Number(row.tds_10 || 0).toLocaleString()}</td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <Database size={32} style={{ opacity: 0.5 }} />
+                      <strong>No customer applications ledger entries found</strong>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
