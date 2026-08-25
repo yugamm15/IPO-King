@@ -30,14 +30,37 @@ function setStoredCache(key, data) {
   } catch (e) {}
 }
 
+export const DEFAULT_BANKS = [
+  { id: 1, bank_name: 'HDFC Bank', ifsc_prefix: 'HDFC' },
+  { id: 2, bank_name: 'State Bank of India (SBI)', ifsc_prefix: 'SBIN' },
+  { id: 3, bank_name: 'ICICI Bank', ifsc_prefix: 'ICIC' },
+  { id: 4, bank_name: 'Axis Bank', ifsc_prefix: 'UTIB' },
+  { id: 5, bank_name: 'Kotak Mahindra Bank', ifsc_prefix: 'KKBK' },
+  { id: 6, bank_name: 'Punjab National Bank (PNB)', ifsc_prefix: 'PUNB' },
+  { id: 7, bank_name: 'Bank of Baroda', ifsc_prefix: 'BARB' },
+  { id: 8, bank_name: 'Canara Bank', ifsc_prefix: 'CNRB' },
+  { id: 9, bank_name: 'Union Bank of India', ifsc_prefix: 'UBIN' },
+  { id: 10, bank_name: 'IndusInd Bank', ifsc_prefix: 'INDB' },
+  { id: 11, bank_name: 'IDFC FIRST Bank', ifsc_prefix: 'IDFB' },
+  { id: 12, bank_name: 'Yes Bank', ifsc_prefix: 'YESB' },
+  { id: 13, bank_name: 'Federal Bank', ifsc_prefix: 'FDRL' },
+  { id: 14, bank_name: 'Bank of India (BOI)', ifsc_prefix: 'BKID' },
+  { id: 15, bank_name: 'Central Bank of India', ifsc_prefix: 'CBIN' },
+  { id: 16, bank_name: 'Indian Bank', ifsc_prefix: 'IDIB' },
+  { id: 17, bank_name: 'AU Small Finance Bank', ifsc_prefix: 'AUBL' },
+  { id: 18, bank_name: 'Bandhan Bank', ifsc_prefix: 'BDBL' }
+];
+
 const dbCache = {
   ipos: getStoredCache('ipos'),
   applications: getStoredCache('applications'),
   customers: getStoredCache('customers'),
+  banks: getStoredCache('banks') || DEFAULT_BANKS,
   stats: getStoredCache('stats'),
   iposTimestamp: Date.now(),
   appsTimestamp: Date.now(),
   custTimestamp: Date.now(),
+  banksTimestamp: Date.now(),
   statsTimestamp: Date.now()
 };
 
@@ -56,6 +79,7 @@ export function invalidateDbCache() {
   fetchLiveIpos(true).catch(() => {});
   fetchApplicationsLedger(true).catch(() => {});
   fetchCustomersShortList(true).catch(() => {});
+  fetchBanks(true).catch(() => {});
   fetchDashboardStats(true).catch(() => {});
 }
 
@@ -72,10 +96,23 @@ export async function fetchLiveIpos(force = false) {
       3000
     );
     if (!res.error && res.data) {
-      dbCache.ipos = res.data;
+      const mapped = res.data.map(item => {
+        const match = (item.gain_est || '').match(/Listed @ ₹([0-9.]+)/);
+        const parsedPrice = match ? Number(match[1]) : (Number(item.listing_price) || 0);
+        return {
+          ...item,
+          listing_price: parsedPrice,
+          exit_mode: item.exit_mode || 'MARKET',
+          kostak_rate: Number(item.kostak_rate) || 0,
+          sauda_rate: Number(item.sauda_rate) || 0,
+          pre_listing_price: Number(item.pre_listing_price) || 0
+        };
+      });
+
+      dbCache.ipos = mapped;
       dbCache.iposTimestamp = Date.now();
-      setStoredCache('ipos', res.data);
-      return res.data;
+      setStoredCache('ipos', mapped);
+      return mapped;
     }
     return dbCache.ipos || [];
   } catch (err) {
@@ -113,11 +150,17 @@ export async function fetchApplicationsLedger(force = false) {
       lots_applied: item.lots_applied || item.quantity || 1,
       bid_amount: item.bid_amount || 15000,
       allotment_status: item.allotment_status || 'Pending',
-      profit_amount: item.profit_amount || 0,
-      client_share_60: item.client_share_60 || 0,
-      admin_share_40: item.admin_share_40 || 0,
-      tds_10: item.tds_10 || 0,
-      net_payout: item.net_payout || 0,
+      allotted_quantity: item.allotted_quantity || 0,
+      exit_mode: item.exit_mode || 'MARKET',
+      kostak_rate: Number(item.kostak_rate) || 0,
+      sauda_rate: Number(item.sauda_rate) || 0,
+      exit_price: Number(item.exit_price) || 0,
+      profit_amount: Number(item.profit_amount) || 0,
+      client_share_60: Number(item.client_share_60) || 0,
+      admin_share_40: Number(item.admin_share_40) || 0,
+      tds_10: Number(item.tds_10) || 0,
+      net_payout: Number(item.net_payout) || 0,
+      settlement_remarks: item.settlement_remarks || '',
       bank_account: item.customers?.bank_account_no || '—',
       dpid: item.customers?.dpid || '—',
       ipo_status: item.ipos?.status || 'open',
@@ -144,7 +187,7 @@ export async function fetchCustomersShortList(force = false) {
     const res = await queryWithTimeout(
       supabase
         .from('customers')
-        .select('id, customer_no, full_name, name, pan_number, bank_account_no, dpid, mobile_number')
+        .select('id, customer_no, full_name, name, pan_number, bank_account_no, bank_name, dpid, mobile_number')
         .order('full_name', { ascending: true }),
       3000
     );
@@ -160,6 +203,106 @@ export async function fetchCustomersShortList(force = false) {
     return dbCache.customers || [];
   }
 }
+
+export async function fetchBanks(force = false) {
+  if (!force && dbCache.banks && dbCache.banks.length > 0) {
+    fetchBanks(true).catch(() => {});
+    return dbCache.banks;
+  }
+
+  try {
+    const res = await queryWithTimeout(
+      supabase.from('banks').select('*').order('bank_name', { ascending: true }),
+      3000
+    );
+
+    if (!res.error && res.data && res.data.length > 0) {
+      dbCache.banks = res.data;
+      dbCache.banksTimestamp = Date.now();
+      setStoredCache('banks', res.data);
+      return res.data;
+    }
+
+    const fallback = getStoredCache('banks') || DEFAULT_BANKS;
+    dbCache.banks = fallback;
+    return fallback;
+  } catch (err) {
+    return dbCache.banks || DEFAULT_BANKS;
+  }
+}
+
+export async function createBank(bankName, ifscPrefix = '') {
+  if (!bankName || !bankName.trim()) throw new Error('Bank name is required');
+  const cleanName = bankName.trim();
+  const cleanIfsc = (ifscPrefix || '').trim().toUpperCase();
+
+  const newBankObj = {
+    bank_name: cleanName,
+    ifsc_prefix: cleanIfsc || null,
+    is_active: true
+  };
+
+  let insertedBank = null;
+
+  try {
+    const { data, error } = await supabase
+      .from('banks')
+      .insert([newBankObj])
+      .select('*')
+      .maybeSingle();
+
+    if (!error && data) {
+      insertedBank = data;
+    }
+  } catch (err) {
+    console.warn('Note on Supabase banks insert:', err);
+  }
+
+  if (!insertedBank) {
+    insertedBank = {
+      id: Date.now(),
+      bank_name: cleanName,
+      ifsc_prefix: cleanIfsc,
+      is_active: true
+    };
+  }
+
+  const currentBanks = dbCache.banks || (await fetchBanks());
+  const updated = [
+    ...currentBanks.filter(b => b.bank_name.toLowerCase() !== cleanName.toLowerCase()),
+    insertedBank
+  ].sort((a, b) => a.bank_name.localeCompare(b.bank_name));
+
+  dbCache.banks = updated;
+  setStoredCache('banks', updated);
+  invalidateDbCache();
+  return insertedBank;
+}
+
+export async function deleteBank(bankId, bankName = '') {
+  try {
+    if (bankId && typeof bankId === 'number' && bankId < 1000000000000) {
+      await supabase.from('banks').delete().eq('id', bankId);
+    } else if (bankName) {
+      await supabase.from('banks').delete().eq('bank_name', bankName);
+    }
+  } catch (err) {
+    console.warn('Supabase bank delete notice:', err);
+  }
+
+  const current = dbCache.banks || DEFAULT_BANKS;
+  const updated = current.filter(b => {
+    if (bankId && String(b.id) === String(bankId)) return false;
+    if (bankName && b.bank_name.toLowerCase() === bankName.toLowerCase()) return false;
+    return true;
+  });
+
+  dbCache.banks = updated;
+  setStoredCache('banks', updated);
+  invalidateDbCache();
+  return true;
+}
+
 
 export async function createApplicationBid(payload) {
   try {
@@ -291,32 +434,162 @@ export async function deleteApplication(applicationId) {
   }
 }
 
-export async function updateIpoListingStatus(ipoId, listingPrice) {
+export function calculateExitMetrics(exitMode, exitParams, app, ipo) {
+  const lotSize = Number(ipo?.lot_size) || 1;
+  const rawLots = Number(app.lots_applied) || (Number(app.quantity) >= lotSize ? Math.floor(Number(app.quantity) / lotSize) : 1) || 1;
+  const rawQty = Number(app.quantity) || (rawLots * lotSize);
+  const isAllotted = String(app.allotment_status || '').toLowerCase().includes('allotment') || String(app.allotment_status || '').toLowerCase() === 'full' || String(app.allotment_status || '').toLowerCase() === 'partial';
+  const allottedShares = Number(app.allotted_quantity) > 0 ? Number(app.allotted_quantity) : (isAllotted ? rawQty : 0);
+  const allottedLots = allottedShares > 0 ? (allottedShares / lotSize) : (isAllotted ? rawLots : 0);
+
+  let grossProfit = 0;
+  let exitPrice = 0;
+  let settlementRemarks = '';
+
+  if (exitMode === 'KOSTAK') {
+    const rate = Number(exitParams.kostak_rate) || 0;
+    grossProfit = Math.round(rate * rawLots);
+    exitPrice = rate;
+    settlementRemarks = `Kostak Exit @ ₹${rate}/lot (Total ₹${grossProfit})`;
+  } else if (exitMode === 'SAUDA') {
+    const rate = Number(exitParams.sauda_rate) || 0;
+    grossProfit = isAllotted ? Math.round(rate * allottedLots) : 0;
+    exitPrice = rate;
+    settlementRemarks = isAllotted ? `Subject to Sauda @ ₹${rate}/lot (${allottedLots} lot)` : 'Sauda Void (No Allotment)';
+  } else if (exitMode === 'PRE_LISTING') {
+    const price = Number(exitParams.pre_listing_price) || 0;
+    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
+    const gainPerShare = Math.max(0, price - issueMax);
+    grossProfit = isAllotted ? Math.round(gainPerShare * allottedShares) : 0;
+    exitPrice = price;
+    settlementRemarks = isAllotted ? `Off-Market Sale @ ₹${price}/sh (+₹${gainPerShare}/sh)` : 'Pre-Listing Void (No Allotment)';
+  } else {
+    // Standard MARKET listing
+    const price = Number(exitParams.listing_price) || Number(ipo?.listing_price) || 0;
+    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
+    const gainPerShare = Math.max(0, price - issueMax);
+    grossProfit = isAllotted ? Math.round(gainPerShare * allottedShares) : 0;
+    exitPrice = price;
+    settlementRemarks = isAllotted ? `Exchange Listed @ ₹${price}/sh` : 'No Allotment';
+  }
+
+  // 40% Customer Gross Share, 60% Admin Share, 10% TDS on Customer Share
+  const custGrossShare = Math.round(grossProfit * 0.40);
+  const adminShare = Math.round(grossProfit * 0.60);
+  const tds10 = Math.round(custGrossShare * 0.10);
+  const netPayout = custGrossShare - tds10;
+
+  return {
+    exit_mode: exitMode,
+    exit_price: exitPrice,
+    profit_amount: grossProfit,
+    client_share_60: custGrossShare,
+    admin_share_40: adminShare,
+    tds_10: tds10,
+    net_payout: netPayout,
+    settlement_remarks: settlementRemarks
+  };
+}
+
+export async function applyPreListingExitToIpo(ipoId, exitMode, exitParams = {}) {
   try {
     const { data: ipoData } = await supabase.from('ipos').select('*').eq('id', ipoId).single();
-    const issueMax = Number(ipoData?.price_band_max) || Number(ipoData?.price_band_min) || 100;
-    const price = Number(listingPrice);
-    const gainPct = (((price - issueMax) / issueMax) * 100).toFixed(1);
-    const gainStr = `Listed @ ₹${price} (${gainPct >= 0 ? '+' : ''}${gainPct}%)`;
+    if (!ipoData) throw new Error('IPO not found');
 
-    const { data, error } = await supabase
-      .from('ipos')
-      .update({
-        status: 'listed',
-        listing_price: price,
-        gain_est: gainStr
-      })
-      .eq('id', ipoId)
-      .select('*')
-      .single();
+    let gainEst = ipoData.gain_est;
+    if (exitMode === 'KOSTAK') {
+      gainEst = `Kostak Exit @ ₹${exitParams.kostak_rate}/app`;
+    } else if (exitMode === 'SAUDA') {
+      gainEst = `Sauda Exit @ ₹${exitParams.sauda_rate}/lot`;
+    } else if (exitMode === 'PRE_LISTING') {
+      const issueMax = Number(ipoData.price_band_max) || 100;
+      const gainPct = (((Number(exitParams.pre_listing_price) - issueMax) / issueMax) * 100).toFixed(1);
+      gainEst = `Off-Market @ ₹${exitParams.pre_listing_price} (+${gainPct}%)`;
+    }
 
-    if (error) throw error;
+    // 1. Update IPO record
+    const ipoUpdatePayload = {
+      exit_mode: exitMode,
+      kostak_rate: Number(exitParams.kostak_rate) || 0,
+      sauda_rate: Number(exitParams.sauda_rate) || 0,
+      pre_listing_price: Number(exitParams.pre_listing_price) || 0,
+      status: 'listed',
+      gain_est: gainEst
+    };
+
+    await supabase.from('ipos').update(ipoUpdatePayload).eq('id', ipoId);
+
+    // 2. Fetch all applications for this IPO and update their metrics
+    const { data: apps } = await supabase.from('applications').select('*').eq('ipo_id', ipoId);
+    if (apps && apps.length > 0) {
+      for (const app of apps) {
+        const metrics = calculateExitMetrics(exitMode, exitParams, app, ipoData);
+        await supabase
+          .from('applications')
+          .update({
+            exit_mode: exitMode,
+            kostak_rate: Number(exitParams.kostak_rate) || 0,
+            sauda_rate: Number(exitParams.sauda_rate) || 0,
+            exit_price: metrics.exit_price,
+            profit_amount: metrics.profit_amount,
+            client_share_60: metrics.client_share_60,
+            admin_share_40: metrics.admin_share_40,
+            tds_10: metrics.tds_10,
+            net_payout: metrics.net_payout,
+            settlement_remarks: metrics.settlement_remarks
+          })
+          .eq('id', app.id);
+      }
+    }
+
     invalidateDbCache();
-    return data;
+    return true;
   } catch (err) {
-    console.error('Error updating IPO listing status:', err);
+    console.error('Error applying pre-listing exit to IPO:', err);
     throw err;
   }
+}
+
+export async function applyPreListingExitToApplications(applicationIds = [], exitMode, exitParams = {}) {
+  if (!applicationIds || applicationIds.length === 0) return true;
+  try {
+    const { data: apps } = await supabase
+      .from('applications')
+      .select('*, ipos(*)')
+      .in('id', applicationIds);
+
+    if (apps && apps.length > 0) {
+      for (const app of apps) {
+        const ipoData = app.ipos || {};
+        const metrics = calculateExitMetrics(exitMode, exitParams, app, ipoData);
+        await supabase
+          .from('applications')
+          .update({
+            exit_mode: exitMode,
+            kostak_rate: Number(exitParams.kostak_rate) || 0,
+            sauda_rate: Number(exitParams.sauda_rate) || 0,
+            exit_price: metrics.exit_price,
+            profit_amount: metrics.profit_amount,
+            client_share_60: metrics.client_share_60,
+            admin_share_40: metrics.admin_share_40,
+            tds_10: metrics.tds_10,
+            net_payout: metrics.net_payout,
+            settlement_remarks: metrics.settlement_remarks
+          })
+          .eq('id', app.id);
+      }
+    }
+
+    invalidateDbCache();
+    return true;
+  } catch (err) {
+    console.error('Error applying exit to applications:', err);
+    throw err;
+  }
+}
+
+export async function updateIpoListingStatus(ipoId, listingPrice) {
+  return applyPreListingExitToIpo(ipoId, 'MARKET', { listing_price: listingPrice });
 }
 
 export async function fetchDashboardStats(force = false) {

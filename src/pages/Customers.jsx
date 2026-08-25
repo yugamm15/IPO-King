@@ -13,6 +13,7 @@ const INITIAL_COLUMNS = [
   { id: 'ca_number', label: 'CA NUMBER', visible: true },
   { id: 'pan_number', label: 'PAN NUMBER', visible: true },
   { id: 'dpid', label: 'DPID (DEMAT)', visible: true },
+  { id: 'bank_name', label: 'BANK NAME', visible: true },
   { id: 'bank_account_no', label: 'BANK A/C NO.', visible: true },
   { id: 'login_id', label: 'LOGIN ID', visible: true },
   { id: 'password_encrypted', label: 'ARHAM', visible: true },
@@ -311,6 +312,7 @@ export default function Customers({ onOpenExcelModal }) {
                 {isColVisible('ca_number') && <th style={{ whiteSpace: 'nowrap' }}>CA NUMBER</th>}
                 {isColVisible('pan_number') && <th style={{ whiteSpace: 'nowrap' }}>PAN NUMBER</th>}
                 {isColVisible('dpid') && <th style={{ whiteSpace: 'nowrap' }}>DPID (DEMAT)</th>}
+                {isColVisible('bank_name') && <th style={{ whiteSpace: 'nowrap' }}>BANK NAME</th>}
                 {isColVisible('bank_account_no') && <th style={{ whiteSpace: 'nowrap' }}>BANK A/C NO.</th>}
                 {isColVisible('login_id') && <th style={{ whiteSpace: 'nowrap' }}>LOGIN ID</th>}
                 {isColVisible('password_encrypted') && <th style={{ whiteSpace: 'nowrap' }}>ARHAM</th>}
@@ -343,6 +345,7 @@ export default function Customers({ onOpenExcelModal }) {
                     {isColVisible('ca_number') && <td><span style={{ fontSize: '12px' }}>{c.ca_number || '—'}</span></td>}
                     {isColVisible('pan_number') && <td><code style={{ fontWeight: 600 }}>{c.pan_number || '—'}</code></td>}
                     {isColVisible('dpid') && <td><span style={{ fontSize: '12px', fontFamily: 'monospace' }}>{c.dpid || '—'}</span></td>}
+                    {isColVisible('bank_name') && <td><span style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap' }}>{c.bank_name || '—'}</span></td>}
                     {isColVisible('bank_account_no') && <td><span style={{ fontSize: '12px' }}>{c.bank_account_no || '—'}</span></td>}
                     {isColVisible('login_id') && <td>{c.login_id || '—'}</td>}
                     {isColVisible('password_encrypted') && <td><span style={{ fontSize: '12px', fontWeight: 500 }}>{c.password_encrypted || 'Arham'}</span></td>}

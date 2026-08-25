@@ -173,6 +173,37 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 11. BANKS TABLE (System Settings Bank Master)
+CREATE TABLE IF NOT EXISTS banks (
+    id SERIAL PRIMARY KEY,
+    bank_name VARCHAR(150) UNIQUE NOT NULL,
+    ifsc_prefix VARCHAR(20),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed Default Indian Banks
+INSERT INTO banks (bank_name, ifsc_prefix) VALUES
+    ('HDFC Bank', 'HDFC'),
+    ('State Bank of India (SBI)', 'SBIN'),
+    ('ICICI Bank', 'ICIC'),
+    ('Axis Bank', 'UTIB'),
+    ('Kotak Mahindra Bank', 'KKBK'),
+    ('Punjab National Bank (PNB)', 'PUNB'),
+    ('Bank of Baroda', 'BARB'),
+    ('Canara Bank', 'CNRB'),
+    ('Union Bank of India', 'UBIN'),
+    ('IndusInd Bank', 'INDB'),
+    ('IDFC FIRST Bank', 'IDFB'),
+    ('Yes Bank', 'YESB'),
+    ('Federal Bank', 'FDRL'),
+    ('Bank of India (BOI)', 'BKID'),
+    ('Central Bank of India', 'CBIN'),
+    ('Indian Bank', 'IDIB'),
+    ('AU Small Finance Bank', 'AUBL'),
+    ('Bandhan Bank', 'BDBL')
+ON CONFLICT (bank_name) DO NOTHING;
+
 -- STEP 3: DISABLE ROW LEVEL SECURITY (RLS) FOR UNRESTRICTED FULL APP ACCESS
 ALTER TABLE ipos DISABLE ROW LEVEL SECURITY;
 ALTER TABLE customers DISABLE ROW LEVEL SECURITY;
@@ -184,3 +215,5 @@ ALTER TABLE customer_documents DISABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE bulk_import_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE otp_verifications DISABLE ROW LEVEL SECURITY;
+ALTER TABLE banks DISABLE ROW LEVEL SECURITY;
+

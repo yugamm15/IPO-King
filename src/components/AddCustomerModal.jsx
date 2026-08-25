@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, AlertTriangle, CheckCircle, UploadCloud, FileText, Image as ImageIcon, X, Plus } from 'lucide-react';
-import { supabase } from '../services/db';
+import { Users, AlertTriangle, CheckCircle, UploadCloud, FileText, Image as ImageIcon, X, Plus, Landmark } from 'lucide-react';
+import { supabase, fetchBanks } from '../services/db';
 
 export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustomerNo, initialData }) {
   const isEditMode = Boolean(initialData);
   const modalScrollRef = useRef(null);
+
+  const [availableBanks, setAvailableBanks] = useState([]);
 
   const [formData, setFormData] = useState({
     customer_no: '',
@@ -12,6 +14,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
     ca_number: '',
     pan_number: '',
     dpid: '',
+    bank_name: '',
     bank_account_no: '',
     login_id: '',
     password_encrypted: 'Arham',
@@ -46,6 +49,16 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  useEffect(() => {
+    async function loadBankOptions() {
+      try {
+        const list = await fetchBanks();
+        setAvailableBanks(list || []);
+      } catch (_) {}
+    }
+    loadBankOptions();
+  }, []);
+
   const triggerError = (msg) => {
     setErrorMsg(msg);
     setIsSubmitting(false);
@@ -62,6 +75,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         ca_number: initialData.ca_number || '',
         pan_number: initialData.pan_number || '',
         dpid: initialData.dpid || '',
+        bank_name: initialData.bank_name || '',
         bank_account_no: initialData.bank_account_no || '',
         login_id: initialData.login_id || '',
         password_encrypted: initialData.password_encrypted || 'Arham',
@@ -221,6 +235,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         ca_number: formData.ca_number.trim() || null,
         pan_number: formData.pan_number.trim().toUpperCase(),
         dpid: formData.dpid.trim() || null,
+        bank_name: formData.bank_name.trim() || null,
         bank_account_no: formData.bank_account_no.trim() || null,
         login_id: formData.login_id.trim() || null,
         password_encrypted: formData.password_encrypted.trim() || null,
@@ -376,48 +391,71 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                 <input type="text" name="dpid" maxLength={16} placeholder="e.g. 1208160012345678" value={formData.dpid} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>6. Bank A/c No.</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>
+                  6. BANK NAME 🏦
+                </label>
+                <select
+                  name="bank_name"
+                  value={formData.bank_name}
+                  onChange={handleChange}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: '6px',
+                    border: '1px solid var(--input-border)', background: 'var(--input-bg)',
+                    color: formData.bank_name ? 'var(--text-main)' : '#94A3B8',
+                    fontSize: '13px', cursor: 'pointer'
+                  }}
+                >
+                  <option value="">-- Select Bank Name --</option>
+                  {availableBanks.map((b, idx) => (
+                    <option key={b.id || idx} value={b.bank_name} style={{ color: '#0F172A' }}>
+                      {b.bank_name} {b.ifsc_prefix ? `(${b.ifsc_prefix})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>7. Bank A/c No.</label>
                 <input type="text" name="bank_account_no" placeholder="e.g. 50100234567890" value={formData.bank_account_no} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>7. Login ID</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>8. Login ID</label>
                 <input type="text" name="login_id" placeholder="e.g. ramesh_k" value={formData.login_id} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>8. ARHAM</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>9. ARHAM</label>
                 <input type="text" name="password_encrypted" placeholder="Arham" value={formData.password_encrypted} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>9. CODE (Customer Code)</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>10. CODE (Customer Code)</label>
                 <input type="text" name="code" placeholder="e.g. IPO-004" value={formData.code} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>10. Mobile Number</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>11. Mobile Number</label>
                 <input type="text" name="mobile_number" placeholder="e.g. 9876543210" value={formData.mobile_number} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>11. BALANCE (₹)</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>12. BALANCE (₹)</label>
                 <input type="number" name="balance" placeholder="e.g. 50000" value={formData.balance} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>12. Phone Kono chhe (Alt Phone)</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>13. Phone Kono chhe (Alt Phone)</label>
                 <input type="text" name="phone_alternate" placeholder="e.g. 9876543211 (Brother)" value={formData.phone_alternate} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>13. EMAIL ADDRESS</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>14. EMAIL ADDRESS</label>
                 <input type="email" name="email" placeholder="e.g. ramesh@email.com" value={formData.email} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>14. PHONE (OTHER NUMBER)</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>15. PHONE (OTHER NUMBER)</label>
                 <input type="text" name="phone_other" placeholder="e.g. 9123456789" value={formData.phone_other} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>15. RETURN AMOUNT (₹)</label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>16. RETURN AMOUNT (₹)</label>
                 <input type="number" name="return_amount" placeholder="0" value={formData.return_amount} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
               </div>
             </div>
             <div className="form-group" style={{ marginTop: '12px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>16. TDS REMARKS</label>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>17. TDS REMARKS</label>
               <input type="text" name="tds_remarks" placeholder="e.g. 10% TDS Deducted for FY26" value={formData.tds_remarks} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
             </div>
           </div>

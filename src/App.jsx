@@ -11,7 +11,6 @@ import Customers from './pages/Customers';
 import IpoMaster from './pages/IpoMaster';
 import Applications from './pages/Applications';
 import Payments from './pages/Payments';
-import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
 import { fetchLiveIpos, fetchApplicationsLedger, fetchCustomersShortList, fetchDashboardStats } from './services/db.js';
@@ -96,7 +95,6 @@ export default function App() {
               element={<Applications onOpenExcelModal={() => setIsExcelModalOpen(true)} />}
             />
             <Route path="/payments" element={<Payments />} />
-            <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

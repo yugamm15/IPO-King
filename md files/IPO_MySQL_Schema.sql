@@ -359,6 +359,39 @@ CREATE TABLE IF NOT EXISTS bulk_import_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
+-- 10. BANKS TABLE (System Settings Bank Master)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS banks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    bank_name VARCHAR(150) UNIQUE NOT NULL,
+    ifsc_prefix VARCHAR(20) NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_bank_name (bank_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seed Default Indian Banks
+INSERT IGNORE INTO banks (bank_name, ifsc_prefix) VALUES
+    ('HDFC Bank', 'HDFC'),
+    ('State Bank of India (SBI)', 'SBIN'),
+    ('ICICI Bank', 'ICIC'),
+    ('Axis Bank', 'UTIB'),
+    ('Kotak Mahindra Bank', 'KKBK'),
+    ('Punjab National Bank (PNB)', 'PUNB'),
+    ('Bank of Baroda', 'BARB'),
+    ('Canara Bank', 'CNRB'),
+    ('Union Bank of India', 'UBIN'),
+    ('IndusInd Bank', 'INDB'),
+    ('IDFC FIRST Bank', 'IDFB'),
+    ('Yes Bank', 'YESB'),
+    ('Federal Bank', 'FDRL'),
+    ('Bank of India (BOI)', 'BKID'),
+    ('Central Bank of India', 'CBIN'),
+    ('Indian Bank', 'IDIB'),
+    ('AU Small Finance Bank', 'AUBL'),
+    ('Bandhan Bank', 'BDBL');
+
+-- ============================================================================
 -- VIEWS FOR EASY REPORTING
 -- ============================================================================
 

@@ -112,6 +112,14 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       datesFormatted = `From ${formatDateString(startDate)}`;
     }
 
+    let finalGainEst = gainEst.trim() || '+₹150/sh Est.';
+    if (status === 'listed' && listingPrice && Number(listingPrice) > 0) {
+      const price = Number(listingPrice);
+      const issueMax = maxPriceNum || minPriceNum || 100;
+      const gainPct = (((price - issueMax) / issueMax) * 100).toFixed(1);
+      finalGainEst = `Listed @ ₹${price} (${gainPct >= 0 ? '+' : ''}${gainPct}%)`;
+    }
+
     const payload = {
       ipo_name: ipoName.trim(),
       symbol: symbol.trim() || 'NSE / BSE',
@@ -124,7 +132,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       subscription_open_date: datesFormatted,
       listing_date: listingDate || null,
       status: status || 'open',
-      gain_est: gainEst.trim() || '+₹150/sh Est.'
+      gain_est: finalGainEst
     };
 
     try {

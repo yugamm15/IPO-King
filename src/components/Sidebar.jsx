@@ -37,10 +37,6 @@ export default function Sidebar({ onLogout, user, initials }) {
           <Wallet size={18} />
           <span>Payments & Profits</span>
         </NavLink>
-        <NavLink to="/reports" className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}>
-          <FileText size={18} />
-          <span>10 Reports</span>
-        </NavLink>
         <NavLink to="/settings" className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}>
           <Settings size={18} />
           <span>System Settings</span>

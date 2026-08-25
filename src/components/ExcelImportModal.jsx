@@ -65,22 +65,16 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
         const text = e.target.result;
         const parsedRows = parseCsvText(text);
         
-        let result = { count: 0 };
-        if (parsedRows.length > 0) {
-          result = await bulkInsertApplications(parsedRows);
-        } else {
-          // Fallback sample row insertion if binary Excel or empty text
-          result = await bulkInsertApplications([{
-            name: selectedFile.name.replace(/\.[^/.]+$/, ''),
-            pan: 'IMPORT' + Math.floor(1000 + Math.random() * 9000) + 'X',
-            quantity: 2,
-            bid_amount: 30000,
-            allotment_status: 'Pending'
-          }]);
+        if (parsedRows.length === 0) {
+          setImportStatus('⚠️ No valid rows found in file. Please ensure the CSV format matches the template.');
+          showToast('No valid rows found to import', 'warning');
+          return;
         }
 
-        setImportStatus(`✅ Import complete! Successfully processed & imported records.`);
-        showToast('Applications & bids imported successfully!', 'success');
+        const result = await bulkInsertApplications(parsedRows);
+
+        setImportStatus(`✅ Import complete! Successfully processed & imported ${result.count} records.`);
+        showToast(`Successfully imported ${result.count} customer applications!`, 'success');
         setTimeout(() => {
           setSelectedFile(null);
           setImportStatus('');
@@ -97,12 +91,12 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
 
   const handleDownloadSample = () => {
     const headers = [
-      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'Bank A/c No.', 'Login ID', 'PASS',
+      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
       'CODE', 'Mobile Number', 'BALANCE', 'Phone Kono chhe', 'email', 'Phone',
       'RETURN', 'TDS remarks', 'Beneficiary'
     ];
     const sampleRow = [
-      '101', 'Amit Patel', 'AC123456', 'AAAPA1234X', '1208160012345678', '50100234567890',
+      '101', 'Amit Patel', 'AC123456', 'AAAPA1234X', '1208160012345678', 'HDFC Bank', '50100234567890',
       'amit_p', 'Secret@123', 'IPO-101', '9876543210', '50000', '9876543211',
       'amit@example.com', '9123456789', '1500', '10% TDS Deducted', 'Priya Patel'
     ];
@@ -119,7 +113,7 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
 
   const handleExportCustomers = () => {
     const headers = [
-      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'Bank A/c No.', 'Login ID', 'PASS',
+      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
       'CODE', 'Mobile Number', 'BALANCE', 'Phone Kono chhe', 'email', 'Phone',
       'RETURN', 'TDS remarks', 'Beneficiary'
     ];
@@ -127,7 +121,7 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
     const dataToExport = customers && customers.length > 0 ? customers : [
       {
         customer_no: 101, full_name: 'Sample Customer', ca_number: 'AC123456', pan_number: 'ABCDE1234F',
-        dpid: '1208160012345678', bank_account_no: '50100234567890', login_id: 'sample_user',
+        dpid: '1208160012345678', bank_name: 'HDFC Bank', bank_account_no: '50100234567890', login_id: 'sample_user',
         password_encrypted: '••••••••', code: 'IPO-101', mobile_number: '9876543210',
         balance: 50000, phone_alternate: '9876543211', email: 'sample@email.com',
         phone_other: '9123456789', return_amount: 1500, tds_remarks: '10% TDS Deducted',
@@ -141,6 +135,7 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
       `"${(c.ca_number || '').replace(/"/g, '""')}"`,
       `"${(c.pan_number || '').replace(/"/g, '""')}"`,
       `"${(c.dpid || '').replace(/"/g, '""')}"`,
+      `"${(c.bank_name || '').replace(/"/g, '""')}"`,
       `"${(c.bank_account_no || '').replace(/"/g, '""')}"`,
       `"${(c.login_id || '').replace(/"/g, '""')}"`,
       `"${(c.password_encrypted || '').replace(/"/g, '""')}"`,

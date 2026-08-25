@@ -16,7 +16,9 @@ import {
   Tag,
   AlertCircle,
   BarChart2,
-  DollarSign
+  DollarSign,
+  Zap,
+  Handshake
 } from 'lucide-react';
 import {
   supabase,
@@ -29,6 +31,8 @@ import {
 } from '../services/db.js';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 import AddApplicationModal from '../components/AddApplicationModal.jsx';
+import PreListingExitModal from '../components/PreListingExitModal.jsx';
+import IpoSelectorDropdown from '../components/IpoSelectorDropdown.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
 export default function Applications({ onOpenExcelModal }) {
@@ -54,6 +58,8 @@ export default function Applications({ onOpenExcelModal }) {
   const [listingModalIpo, setListingModalIpo] = useState(null);
   const [customListingPrice, setCustomListingPrice] = useState('');
   const [partialModalApp, setPartialModalApp] = useState(null);
+  const [isPreListingModalOpen, setIsPreListingModalOpen] = useState(false);
+  const [preListingTargetApps, setPreListingTargetApps] = useState(null);
 
   const loadData = async (force = false) => {
     if (!applications || applications.length === 0) {
@@ -309,36 +315,30 @@ export default function Applications({ onOpenExcelModal }) {
           <button className="btn btn-secondary" onClick={() => loadData(true)} title="Refresh Applications Data">
             <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
           </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setPreListingTargetApps(null);
+              setIsPreListingModalOpen(true);
+            }}
+            title="Pre-Listing Exit / Kostak / Subject to Sauda"
+            style={{ borderColor: '#D97706', color: '#D97706', fontWeight: 700 }}
+          >
+            <Zap size={15} /> ⚡ Pre-Listing Exit
+          </button>
           <button className="btn btn-primary" onClick={() => setIsAddBidModalOpen(true)}>
             <Plus size={16} /> Apply IPO
           </button>
         </div>
       </div>
 
-      {/* SINGLE IPO SELECTOR DROPDOWN (Clean Single Dropdown requested by user) */}
-      <div className="glass-panel" style={{ padding: '18px 20px', borderRadius: '16px', marginBottom: '24px', background: 'var(--card-bg, rgba(255, 255, 255, 0.05))', border: '1px solid var(--panel-border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Layers size={22} style={{ color: 'var(--primary)' }} />
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary)', letterSpacing: '0.5px' }}>
-              Select Current IPO / Offering:
-            </label>
-            <select
-              className="input-field"
-              value={selectedIpoId}
-              onChange={(e) => setSelectedIpoId(e.target.value)}
-              style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', marginTop: '4px' }}
-            >
-              <option value="All">🌐 All IPO Offerings Ledger ({ipos.length} IPOs Tracked)</option>
-              {ipos.map((ipo) => (
-                <option key={ipo.id} value={ipo.id}>
-                  {ipo.ipo_name} ({ipo.ipo_type || 'Mainboard'}) — [{String(ipo.status).toUpperCase()}]
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+      {/* PREMIUM IPO SELECTOR DROPDOWN */}
+      <IpoSelectorDropdown
+        ipos={ipos}
+        selectedIpoId={selectedIpoId}
+        onSelectIpo={(ipoId) => setSelectedIpoId(ipoId)}
+        applications={applications}
+      />
 
       {/* SELECTED IPO SUMMARY CARDS & LISTED STATUS ACTIONS */}
       {activeSelectedIpo && (
@@ -368,7 +368,23 @@ export default function Applications({ onOpenExcelModal }) {
             </div>
 
             {/* Actions for Selected IPO */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setPreListingTargetApps(null);
+                  setIsPreListingModalOpen(true);
+                }}
+                style={{
+                  background: activeSelectedIpo.exit_mode && activeSelectedIpo.exit_mode !== 'MARKET' ? 'rgba(37, 99, 235, 0.12)' : 'rgba(217, 119, 6, 0.12)',
+                  borderColor: activeSelectedIpo.exit_mode && activeSelectedIpo.exit_mode !== 'MARKET' ? 'var(--primary)' : '#D97706',
+                  color: activeSelectedIpo.exit_mode && activeSelectedIpo.exit_mode !== 'MARKET' ? 'var(--primary)' : '#D97706',
+                  fontWeight: 700
+                }}
+              >
+                <Zap size={14} /> {activeSelectedIpo.exit_mode && activeSelectedIpo.exit_mode !== 'MARKET' ? activeSelectedIpo.exit_mode : '⚡ Pre-Listing Exit'}
+              </button>
+
               {String(activeSelectedIpo.status).toLowerCase() !== 'listed' ? (
                 <button
                   className="btn btn-primary"
@@ -385,10 +401,6 @@ export default function Applications({ onOpenExcelModal }) {
                   <CheckCircle2 size={16} /> IPO Listed @ ₹{activeSelectedIpo.listing_price}
                 </div>
               )}
-
-              <button className="btn btn-secondary" onClick={() => setIsAddBidModalOpen(true)}>
-                <Plus size={14} /> Apply IPO
-              </button>
             </div>
           </div>
         </div>
@@ -437,28 +449,65 @@ export default function Applications({ onOpenExcelModal }) {
       <div className="glass-panel" style={{ padding: '16px 20px', borderRadius: '16px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
 
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto' }}>
-            {['All', 'Full Allotment', 'Partial', 'Pending', 'Rejected'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '20px',
-                  border: '1px solid',
-                  borderColor: statusFilter === st ? 'var(--primary)' : 'var(--panel-border)',
-                  background: statusFilter === st ? 'var(--primary)' : 'transparent',
-                  color: statusFilter === st ? '#FFFFFF' : 'var(--text-muted)',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {st}
-              </button>
-            ))}
+          {/* Status Filter Badges */}
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
+            {[
+              { id: 'All', label: 'All Applications' },
+              { id: 'Full Allotment', label: 'Full Allotment' },
+              { id: 'Partial', label: 'Partial Allotment' },
+              { id: 'Pending', label: 'Pending' },
+              { id: 'Rejected', label: 'Rejected' }
+            ].map((tab) => {
+              const isActive = statusFilter === tab.id;
+              // Count apps for this filter within current IPO view
+              const count = applications.filter((app) => {
+                if (selectedIpoId !== 'All') {
+                  const matchIpo = String(app.ipo_id) === String(selectedIpoId) || String(app.ipo_name).toLowerCase() === String(activeSelectedIpo?.ipo_name).toLowerCase();
+                  if (!matchIpo) return false;
+                }
+                if (tab.id === 'All') return true;
+                const statusVal = String(app.allotment_status || app.status || 'Pending').toLowerCase();
+                return statusVal.includes(tab.id.toLowerCase());
+              }).length;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setStatusFilter(tab.id)}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '24px',
+                    border: '1.5px solid',
+                    borderColor: isActive ? 'var(--primary, #2563EB)' : 'var(--panel-border, #E2E8F0)',
+                    background: isActive ? 'var(--primary, #2563EB)' : 'var(--input-bg, #FFFFFF)',
+                    color: isActive ? '#FFFFFF' : 'var(--text-main, #0F172A)',
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'none'
+                  }}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--table-header-bg, #F1F5F9)',
+                      color: isActive ? '#FFFFFF' : 'var(--text-muted, #64748B)'
+                    }}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ position: 'relative', minWidth: '280px', maxWidth: '380px', flex: '1 1 300px' }}>
@@ -507,11 +556,11 @@ export default function Applications({ onOpenExcelModal }) {
                 <th>PAN Number</th>
                 <th>Bank A/C Ref</th>
                 <th>IPO Applied</th>
-                <th>Lots / Quantity</th>
-                <th>Bid Amount</th>
+                <th>Lots / Qty</th>
+                <th>Exit Strategy</th>
                 <th>Allotment Status</th>
-                <th>60% Cust Profit</th>
-                <th>10% TDS Deducted</th>
+                <th>40% Cust Profit</th>
+                <th>10% TDS</th>
                 <th style={{ textAlign: 'right', paddingRight: '20px' }}>Action</th>
               </tr>
             </thead>
@@ -530,9 +579,9 @@ export default function Applications({ onOpenExcelModal }) {
                   const ipoVal = row.ipo_name || row.ipo_applied || 'IPO Offering';
                   const lotsVal = row.lots_applied || 1;
                   const qtyVal = row.quantity || (lotsVal * 50);
-                  const bidAmt = row.bid_amount || 15000;
                   const clientProfit = Number(row.client_share_60) || 0;
                   const tdsAmt = Number(row.tds_10) || 0;
+                  const exitModeStr = row.exit_mode || 'MARKET';
 
                   return (
                     <tr key={row.id}>
@@ -553,7 +602,23 @@ export default function Applications({ onOpenExcelModal }) {
                       <td>
                         <strong>{lotsVal} Lots</strong> ({qtyVal} sh)
                       </td>
-                      <td>₹{Number(bidAmt).toLocaleString('en-IN')}</td>
+                      <td>
+                        {exitModeStr === 'KOSTAK' ? (
+                          <span className="pill-badge" style={{ background: '#EDE9FE', color: '#7C3AED', fontWeight: 700, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Tag size={11} /> KOSTAK (₹{row.kostak_rate || row.exit_price})
+                          </span>
+                        ) : exitModeStr === 'SAUDA' ? (
+                          <span className="pill-badge" style={{ background: '#FEF3C7', color: '#D97706', fontWeight: 700, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Handshake size={11} /> SAUDA (₹{row.sauda_rate || row.exit_price})
+                          </span>
+                        ) : exitModeStr === 'PRE_LISTING' ? (
+                          <span className="pill-badge" style={{ background: '#D1FAE5', color: '#059669', fontWeight: 700, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <TrendingUp size={11} /> OFF-MKT (₹{row.exit_price})
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Market Listing</span>
+                        )}
+                      </td>
                       <td>
                         {/* Interactive Status Selector directly in table */}
                         <select
@@ -584,6 +649,24 @@ export default function Applications({ onOpenExcelModal }) {
                       </td>
                       <td style={{ textAlign: 'right', paddingRight: '20px' }}>
                         <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <button
+                            className="btn-xs"
+                            onClick={() => {
+                              setPreListingTargetApps([row]);
+                              setIsPreListingModalOpen(true);
+                            }}
+                            title="Pre-Listing Exit for this Application"
+                            style={{
+                              background: 'rgba(217, 119, 6, 0.1)',
+                              color: '#D97706',
+                              border: '1px solid rgba(217, 119, 6, 0.25)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <Zap size={11} /> Exit
+                          </button>
                           <button
                             className="btn-xs btn-outline"
                             onClick={() => handleDeleteBid(row.id, row.customer_name)}
@@ -688,6 +771,25 @@ export default function Applications({ onOpenExcelModal }) {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Pre-Listing Exit & Grey Market Sale Modal */}
+      {isPreListingModalOpen && (
+        <PreListingExitModal
+          isOpen={isPreListingModalOpen}
+          targetIpo={activeSelectedIpo}
+          targetApplications={preListingTargetApps}
+          ipos={ipos}
+          onClose={() => {
+            setIsPreListingModalOpen(false);
+            setPreListingTargetApps(null);
+          }}
+          onSuccess={() => {
+            setIsPreListingModalOpen(false);
+            setPreListingTargetApps(null);
+            loadData(true);
+          }}
+        />
       )}
 
     </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Wallet, Search, RefreshCw, Database, FileText, CheckCircle2, X } from 'lucide-react';
 import { supabase, fetchApplicationsLedger, subscribeToRealtimeChanges } from '../services/db.js';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
-import { generateReportPdf } from '../utils/reportExporter.js';
+import { downloadPayoutVoucherPdf } from '../utils/pdfGenerator.js';
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
@@ -14,16 +14,22 @@ export default function Payments() {
     try {
       const data = await fetchApplicationsLedger();
       const mapped = (data || []).map((app, idx) => {
-        const gross = Number(app.profit_amount) || (Number(app.lots_applied || 1) * 15000 * 0.20);
-        const clientProfit = Number(app.client_share_60) || Math.round(gross * 0.60);
-        const tds10 = Number(app.tds_10) || Math.round(gross * 0.10);
-        const netPayout = clientProfit > 0 ? (clientProfit - tds10) : 0;
+        const gross = Number(app.profit_amount) || 0;
+        const clientProfit = Number(app.client_share_60) || 0;
+        const tds10 = Number(app.tds_10) || 0;
+        const netPayout = Number(app.net_payout) || (clientProfit > 0 ? (clientProfit - tds10) : 0);
+
+        let exitLabel = '40-60 Split';
+        if (app.exit_mode === 'KOSTAK') exitLabel = `Kostak Exit @ ₹${app.kostak_rate || app.exit_price}`;
+        else if (app.exit_mode === 'SAUDA') exitLabel = `Subject to Sauda @ ₹${app.sauda_rate || app.exit_price}`;
+        else if (app.exit_mode === 'PRE_LISTING') exitLabel = `Off-Market Sale @ ₹${app.exit_price}`;
+        else if (app.allotted_quantity) exitLabel = `${app.allotted_quantity} sh Allocated`;
 
         return {
-          txn_id: `TXN-${8800 + idx + 1}`,
-          customer: app.customer_name,
-          beneficiary: `${app.customer_name} (${app.bank_account || 'Bank A/C'})`,
-          txn_type: `Profit Distribution (${app.allotted_quantity ? app.allotted_quantity + ' sh Allocated' : '40-60 Split'})`,
+          txn_id: app.application_number || `TXN-${8800 + idx + 1}`,
+          customer: app.customer_name || 'Customer',
+          beneficiary: `${app.customer_name || 'Customer'} (${app.bank_account || 'Bank A/C'})`,
+          txn_type: `Profit Distribution (${exitLabel})`,
           gross_amount: `₹ ${gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
           profit_40: `₹ ${clientProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
           tds_10: `₹ ${tds10.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
@@ -62,24 +68,7 @@ export default function Payments() {
   });
 
   const handleDownloadReceipt = (row) => {
-    generateReportPdf({
-      title: `Payout Voucher — ${row.txn_id}`,
-      subtitle: `Official Payment & TDS Ledger Slip for ${row.customer}`,
-      columns: [
-        { header: 'Parameter', key: 'param', width: 40 },
-        { header: 'Details / Amount', key: 'val', width: 60 }
-      ],
-      rows: [
-        { param: 'Transaction Ref', val: row.txn_id },
-        { param: 'Customer Name', val: row.customer },
-        { param: 'Beneficiary Bank', val: row.beneficiary },
-        { param: 'Gross Realized Profit', val: row.gross_amount },
-        { param: 'Customer Share (40%)', val: row.profit_40 },
-        { param: '10% TDS Withheld', val: row.tds_10 },
-        { param: 'Net Settled Payout', val: row.net_payout },
-        { param: 'Audit Status', val: 'Verified (ITD Compliant)' }
-      ]
-    });
+    downloadPayoutVoucherPdf(row);
   };
 
   return (

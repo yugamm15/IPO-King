@@ -14,10 +14,14 @@ import {
   AlertCircle,
   Sparkles,
   BarChart3,
-  X
+  X,
+  Zap,
+  Tag,
+  Handshake
 } from 'lucide-react';
-import { supabase, fetchLiveIpos, subscribeToRealtimeChanges } from '../services/db.js';
+import { supabase, fetchLiveIpos, subscribeToRealtimeChanges, updateIpoListingStatus } from '../services/db.js';
 import AddIpoModal from '../components/AddIpoModal.jsx';
+import PreListingExitModal from '../components/PreListingExitModal.jsx';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
@@ -33,6 +37,7 @@ export default function IpoMaster() {
   const [editingIpo, setEditingIpo] = useState(null);
   const [listingModalIpo, setListingModalIpo] = useState(null);
   const [customListingPrice, setCustomListingPrice] = useState('');
+  const [preListingExitIpo, setPreListingExitIpo] = useState(null);
 
   const loadIpos = async (force = false) => {
     if (!ipos || ipos.length === 0) {
@@ -89,26 +94,13 @@ export default function IpoMaster() {
       return;
     }
 
-    const issueMax = Number(listingModalIpo.price_band_max) || Number(listingModalIpo.price_band_min) || 100;
-    const gainPct = (((price - issueMax) / issueMax) * 100).toFixed(1);
-    const gainStr = `Listed @ ₹${price} (${gainPct >= 0 ? '+' : ''}${gainPct}%)`;
-
     try {
-      const { error } = await supabase
-        .from('ipos')
-        .update({
-          status: 'listed',
-          listing_price: price,
-          gain_est: gainStr
-        })
-        .eq('id', listingModalIpo.id);
-
-      if (error) throw error;
+      await updateIpoListingStatus(listingModalIpo.id, price);
 
       showToast(`Listing price recorded for ${listingModalIpo.ipo_name}`, 'success');
       setListingModalIpo(null);
       setCustomListingPrice('');
-      loadIpos();
+      loadIpos(true);
     } catch (err) {
       showToast(`Error setting listing price: ${err.message}`, 'error');
     }
@@ -375,6 +367,24 @@ export default function IpoMaster() {
                       <td style={{ textAlign: 'right', paddingRight: '20px' }}>
                         <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
 
+                          <button
+                            className="btn-xs"
+                            onClick={() => setPreListingExitIpo(ipo)}
+                            title="Pre-Listing Exit / Kostak / Subject to Sauda"
+                            style={{
+                              background: ipo.exit_mode && ipo.exit_mode !== 'MARKET' ? 'rgba(37, 99, 235, 0.15)' : 'rgba(217, 119, 6, 0.12)',
+                              color: ipo.exit_mode && ipo.exit_mode !== 'MARKET' ? 'var(--primary)' : '#D97706',
+                              border: '1px solid',
+                              borderColor: ipo.exit_mode && ipo.exit_mode !== 'MARKET' ? 'rgba(37, 99, 235, 0.3)' : 'rgba(217, 119, 6, 0.3)',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <Zap size={12} /> {ipo.exit_mode && ipo.exit_mode !== 'MARKET' ? ipo.exit_mode : 'Pre-Listing Exit'}
+                          </button>
+
                           {!isListed && (
                             <button
                               className="btn-xs btn-outline"
@@ -449,6 +459,20 @@ export default function IpoMaster() {
             loadIpos();
             setIsModalOpen(false);
             setEditingIpo(null);
+          }}
+        />
+      )}
+
+      {/* Pre-Listing Exit & Grey Market Sale Modal */}
+      {preListingExitIpo && (
+        <PreListingExitModal
+          isOpen={Boolean(preListingExitIpo)}
+          targetIpo={preListingExitIpo}
+          ipos={ipos}
+          onClose={() => setPreListingExitIpo(null)}
+          onSuccess={() => {
+            setPreListingExitIpo(null);
+            loadIpos(true);
           }}
         />
       )}

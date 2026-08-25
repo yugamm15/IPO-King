@@ -582,17 +582,97 @@ app.post('/api/v1/applications/create', async (req, res) => {
   }
 });
 
+const DEFAULT_SERVER_BANKS = [
+  { id: 1, bank_name: 'HDFC Bank', ifsc_prefix: 'HDFC' },
+  { id: 2, bank_name: 'State Bank of India (SBI)', ifsc_prefix: 'SBIN' },
+  { id: 3, bank_name: 'ICICI Bank', ifsc_prefix: 'ICIC' },
+  { id: 4, bank_name: 'Axis Bank', ifsc_prefix: 'UTIB' },
+  { id: 5, bank_name: 'Kotak Mahindra Bank', ifsc_prefix: 'KKBK' },
+  { id: 6, bank_name: 'Punjab National Bank (PNB)', ifsc_prefix: 'PUNB' },
+  { id: 7, bank_name: 'Bank of Baroda', ifsc_prefix: 'BARB' },
+  { id: 8, bank_name: 'Canara Bank', ifsc_prefix: 'CNRB' },
+  { id: 9, bank_name: 'Union Bank of India', ifsc_prefix: 'UBIN' },
+  { id: 10, bank_name: 'IndusInd Bank', ifsc_prefix: 'INDB' },
+  { id: 11, bank_name: 'IDFC FIRST Bank', ifsc_prefix: 'IDFB' },
+  { id: 12, bank_name: 'Yes Bank', ifsc_prefix: 'YESB' },
+  { id: 13, bank_name: 'Federal Bank', ifsc_prefix: 'FDRL' },
+  { id: 14, bank_name: 'Bank of India (BOI)', ifsc_prefix: 'BKID' },
+  { id: 15, bank_name: 'Central Bank of India', ifsc_prefix: 'CBIN' },
+  { id: 16, bank_name: 'Indian Bank', ifsc_prefix: 'IDIB' },
+  { id: 17, bank_name: 'AU Small Finance Bank', ifsc_prefix: 'AUBL' },
+  { id: 18, bank_name: 'Bandhan Bank', ifsc_prefix: 'BDBL' }
+];
+
+app.get('/api/v1/banks', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('banks')
+      .select('*')
+      .order('bank_name', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return ok(res, { banks: data });
+    }
+    return ok(res, { banks: DEFAULT_SERVER_BANKS });
+  } catch (err) {
+    return ok(res, { banks: DEFAULT_SERVER_BANKS });
+  }
+});
+
+app.post('/api/v1/banks', async (req, res) => {
+  try {
+    const { bank_name, ifsc_prefix } = req.body || {};
+    if (!bank_name || !String(bank_name).trim()) {
+      return fail(res, 'Bank name is required.', 400);
+    }
+    const cleanName = String(bank_name).trim();
+    const cleanIfsc = String(ifsc_prefix || '').trim().toUpperCase() || null;
+
+    const { data, error } = await supabase
+      .from('banks')
+      .insert([{ bank_name: cleanName, ifsc_prefix: cleanIfsc, is_active: true }])
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      return ok(res, {
+        message: 'Bank registered in catalog.',
+        bank: { id: Date.now(), bank_name: cleanName, ifsc_prefix: cleanIfsc, is_active: true }
+      });
+    }
+
+    return ok(res, { message: 'Bank created successfully.', bank: data });
+  } catch (err) {
+    return fail(res, err.message || 'Error creating bank.', 500);
+  }
+});
+
+app.delete('/api/v1/banks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id) {
+      await supabase.from('banks').delete().eq('id', id);
+    }
+    return ok(res, { message: 'Bank deleted successfully.' });
+  } catch (err) {
+    return fail(res, err.message || 'Error deleting bank.', 500);
+  }
+});
+
 app.get('/api', (req, res) => {
   res.json({
     status: 'online',
     name: 'IPO KING API Gateway',
     endpoints: [
-      'GET  /api/v1/health',
-      'POST /api/v1/auth/send-otp',
-      'POST /api/v1/auth/verify-otp',
-      'GET  /api/v1/ipos/live',
-      'POST /api/v1/applications/create',
-      'POST /api/v1/allotments/calculate-profit'
+      'GET    /api/v1/health',
+      'POST   /api/v1/auth/send-otp',
+      'POST   /api/v1/auth/verify-otp',
+      'GET    /api/v1/ipos/live',
+      'POST   /api/v1/applications/create',
+      'POST   /api/v1/allotments/calculate-profit',
+      'GET    /api/v1/banks',
+      'POST   /api/v1/banks',
+      'DELETE /api/v1/banks/:id'
     ]
   });
 });

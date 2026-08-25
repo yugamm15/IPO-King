@@ -36,10 +36,6 @@ export default function Navbar({ onLogout, user, initials }) {
             <Wallet size={16} />
             <span>Payments & Profits</span>
           </NavLink>
-          <NavLink to="/reports" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <FileText size={16} />
-            <span>10 Reports</span>
-          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Settings size={16} />
             <span>System Settings</span>
