@@ -25,7 +25,8 @@ import {
   updateIpoListingStatus,
   updateApplicationAllotmentStatus,
   deleteApplication,
-  subscribeToRealtimeChanges
+  subscribeToRealtimeChanges,
+  calculateExitMetrics
 } from '../services/db.js';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 import AddApplicationModal from '../components/AddApplicationModal.jsx';
@@ -137,36 +138,24 @@ export default function Applications({ showConfirm }) {
     }
 
     try {
-      let metrics = {};
-      const isListed = ipoItem && String(ipoItem.status).toLowerCase() === 'listed';
-      const listingPrice = Number(ipoItem?.listing_price) || 0;
-      const issuePrice = Number(ipoItem?.price_band_max) || Number(ipoItem?.price_band_min) || 100;
+      const exitParams = {
+        exit_mode: app.exit_mode || 'MARKET',
+        exit_price: Number(app.exit_price) || Number(ipoItem?.listing_price) || 0,
+        kostak_rate: Number(app.kostak_rate) || 0,
+        sauda_rate: Number(app.sauda_rate) || 0
+      };
 
-      if (isListed && newStatus === 'Full Allotment') {
-        const grossGainPerShare = listingPrice - issuePrice;
-        const totalGrossProfit = Math.max(0, grossGainPerShare * totalQty);
-        const tds = Math.round(totalGrossProfit * 0.10);
-        const netProfit = totalGrossProfit - tds;
-        const client60 = Math.round(netProfit * 0.60);
-        const admin40 = Math.round(netProfit * 0.40);
+      const calculated = calculateExitMetrics(exitParams, {}, { ...app, allotment_status: newStatus }, ipoItem);
 
-        metrics = {
-          allotted_quantity: totalQty,
-          profit_amount: totalGrossProfit,
-          client_share_60: client60,
-          admin_share_40: admin40,
-          tds_10: tds,
-          net_payout: client60
-        };
-      } else {
-        metrics = {
-          profit_amount: 0,
-          client_share_60: 0,
-          admin_share_40: 0,
-          tds_10: 0,
-          net_payout: 0
-        };
-      }
+      const metrics = {
+        allotted_quantity: newStatus === 'Full Allotment' ? totalQty : 0,
+        profit_amount: calculated.profit_amount,
+        client_share_60: calculated.client_share_60,
+        admin_share_40: calculated.admin_share_40,
+        tds_10: calculated.tds_10,
+        net_payout: calculated.net_payout,
+        settlement_remarks: calculated.settlement_remarks
+      };
 
       await updateApplicationAllotmentStatus(app.id, newStatus, metrics);
       showToast(`Allotment status updated to "${newStatus}" for ${app.customer_name}`, 'success');
@@ -184,23 +173,23 @@ export default function Applications({ showConfirm }) {
 
     try {
       const ipoItem = ipos.find(i => String(i.id) === String(app.ipo_id)) || activeSelectedIpo;
-      const isListed = ipoItem && String(ipoItem.status).toLowerCase() === 'listed';
-      const listingPrice = Number(ipoItem?.listing_price) || 0;
-      const issuePrice = Number(ipoItem?.price_band_max) || Number(ipoItem?.price_band_min) || 100;
-      const grossGainPerShare = listingPrice - issuePrice;
-      const totalGrossProfit = isListed ? Math.max(0, grossGainPerShare * sharesNum) : 0;
-      const tds = Math.round(totalGrossProfit * 0.10);
-      const netProfit = totalGrossProfit - tds;
-      const client60 = Math.round(netProfit * 0.60);
-      const admin40 = Math.round(netProfit * 0.40);
+      const exitParams = {
+        exit_mode: app.exit_mode || 'MARKET',
+        exit_price: Number(app.exit_price) || Number(ipoItem?.listing_price) || 0,
+        kostak_rate: Number(app.kostak_rate) || 0,
+        sauda_rate: Number(app.sauda_rate) || 0
+      };
+
+      const calculated = calculateExitMetrics(exitParams, {}, { ...app, quantity: sharesNum, allotment_status: 'Partial Allotment' }, ipoItem);
 
       const metrics = {
         allotted_quantity: sharesNum,
-        profit_amount: totalGrossProfit,
-        client_share_60: client60,
-        admin_share_40: admin40,
-        tds_10: tds,
-        net_payout: client60
+        profit_amount: calculated.profit_amount,
+        client_share_60: calculated.client_share_60,
+        admin_share_40: calculated.admin_share_40,
+        tds_10: calculated.tds_10,
+        net_payout: calculated.net_payout,
+        settlement_remarks: calculated.settlement_remarks
       };
 
       await updateApplicationAllotmentStatus(app.id, 'Partial Allotment', metrics);
@@ -227,27 +216,20 @@ export default function Applications({ showConfirm }) {
       await updateIpoListingStatus(listingModalIpo.id, price);
 
       const targetIpoApps = applications.filter(a => String(a.ipo_id) === String(listingModalIpo.id));
-      const issuePrice = Number(listingModalIpo.price_band_max) || Number(listingModalIpo.price_band_min) || 100;
-      const lotSize = Number(listingModalIpo.lot_size) || 1;
 
       for (const app of targetIpoApps) {
         const st = String(app.allotment_status).toLowerCase();
         if (st.includes('full') || st.includes('partial')) {
-          const lotsApplied = Number(app.lots_applied) || 1;
-          const totalQty = lotsApplied * lotSize;
-          const grossGainPerShare = price - issuePrice;
-          const totalGrossProfit = Math.max(0, grossGainPerShare * totalQty);
-          const tds = Math.round(totalGrossProfit * 0.10);
-          const netProfit = totalGrossProfit - tds;
-          const client60 = Math.round(netProfit * 0.60);
-          const admin40 = Math.round(netProfit * 0.40);
+          const calculated = calculateExitMetrics('MARKET', { listing_price: price }, app, listingModalIpo);
 
           await updateApplicationAllotmentStatus(app.id, app.allotment_status, {
-            profit_amount: totalGrossProfit,
-            client_share_60: client60,
-            admin_share_40: admin40,
-            tds_10: tds,
-            net_payout: client60
+            exit_price: price,
+            profit_amount: calculated.profit_amount,
+            client_share_60: calculated.client_share_60,
+            admin_share_40: calculated.admin_share_40,
+            tds_10: calculated.tds_10,
+            net_payout: calculated.net_payout,
+            settlement_remarks: calculated.settlement_remarks
           });
         }
       }
