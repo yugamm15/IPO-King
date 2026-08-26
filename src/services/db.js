@@ -75,7 +75,15 @@ function queryWithTimeout(promise, ms = 10000) {
 }
 
 export function invalidateDbCache() {
-  // Soft invalidate: triggers background re-fetches without clearing instant 0ms cached data
+  dbCache.applications = null;
+  dbCache.ipos = null;
+  dbCache.stats = null;
+  try {
+    localStorage.removeItem('ipoking_cache_applications');
+    localStorage.removeItem('ipoking_cache_ipos');
+    localStorage.removeItem('ipoking_cache_stats');
+  } catch (_) {}
+
   fetchLiveIpos(true).catch(() => {});
   fetchApplicationsLedger(true).catch(() => {});
   fetchCustomersShortList(true).catch(() => {});
@@ -391,29 +399,78 @@ export async function createMultipleApplicationBids(customerIds = [], payloadBas
 
 export async function updateApplicationAllotmentStatus(applicationId, allotmentStatus, extraPayload = {}) {
   try {
-    const validColumns = ['allotment_status', 'allotted_quantity', 'quantity', 'bid_amount', 'category'];
     const updateData = {
       allotment_status: allotmentStatus
     };
 
     if (typeof extraPayload === 'object' && extraPayload !== null) {
-      for (const key of Object.keys(extraPayload)) {
-        if (validColumns.includes(key)) {
-          updateData[key] = extraPayload[key];
-        }
-      }
+      Object.assign(updateData, extraPayload);
     }
 
-    const { data, error } = await supabase
-      .from('applications')
-      .update(updateData)
-      .eq('id', applicationId)
-      .select('*')
-      .single();
+    let resultData = null;
+    try {
+      const { data, error } = await supabase
+        .from('applications')
+        .update(updateData)
+        .eq('id', applicationId)
+        .select('*')
+        .single();
+      
+      if (!error && data) {
+        resultData = data;
+      }
+    } catch (_) {}
 
-    if (error) throw error;
+    if (!resultData) {
+      // Fallback update only core columns if extended fields are missing in Supabase schema
+      const fallback = { allotment_status: allotmentStatus };
+      if (extraPayload.allotted_quantity !== undefined) fallback.allotted_quantity = extraPayload.allotted_quantity;
+      if (extraPayload.quantity !== undefined) fallback.quantity = extraPayload.quantity;
+      const { data: fbData } = await supabase
+        .from('applications')
+        .update(fallback)
+        .eq('id', applicationId)
+        .select('*')
+        .single();
+      resultData = fbData || { id: applicationId, ...updateData };
+    }
+
+    // Persist into ipo_allotments ledger table
+    try {
+      const { data: fullApp } = await supabase
+        .from('applications')
+        .select('*, ipos(*)')
+        .eq('id', applicationId)
+        .single();
+
+      if (fullApp) {
+        const ipoData = fullApp.ipos || {};
+        const profitAmt = Number(updateData.profit_amount ?? fullApp.profit_amount) || 0;
+        const clientShare = Number(updateData.client_share_60 ?? fullApp.client_share_60) || Math.round(profitAmt * 0.40);
+        const adminShare = Number(updateData.admin_share_40 ?? fullApp.admin_share_40) || Math.round(profitAmt * 0.60);
+        const tds = Number(updateData.tds_10 ?? fullApp.tds_10) || Math.round(clientShare * 0.10);
+        const net = Number(updateData.net_payout ?? fullApp.net_payout) || Math.max(0, clientShare - tds);
+
+        await supabase.from('ipo_allotments').upsert([{
+          application_id: applicationId,
+          customer_id: fullApp.customer_id,
+          ipo_id: fullApp.ipo_id,
+          applied_qty: Number(fullApp.quantity) || (Number(ipoData.lot_size) || 1),
+          allotted_qty: Number(updateData.allotted_quantity ?? fullApp.allotted_quantity) || Number(fullApp.quantity) || (Number(ipoData.lot_size) || 1),
+          allotment_price: Number(ipoData.price_band_max) || Number(ipoData.price_band_min) || 100,
+          listing_price: Number(updateData.exit_price ?? fullApp.exit_price ?? ipoData.listing_price) || 0,
+          total_profit: profitAmt,
+          customer_profit_share_40pct: clientShare,
+          company_profit_share_60pct: adminShare,
+          tds_amount_10pct: tds,
+          net_payout: net,
+          payment_status: 'Pending'
+        }], { onConflict: 'application_id' });
+      }
+    } catch (_) {}
+
     invalidateDbCache();
-    return data;
+    return resultData;
   } catch (err) {
     console.error('Error updating application status:', err);
     throw err;
