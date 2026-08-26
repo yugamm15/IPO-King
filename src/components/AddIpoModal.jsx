@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Layers,
   Building2,
-  Calendar,
   TrendingUp,
   X,
   AlertTriangle,
-  CheckCircle2,
   Save,
-  Zap,
-  Globe
+  Zap
 } from 'lucide-react';
 import { supabase } from '../services/db.js';
 
@@ -22,14 +19,8 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
   const [priceMax, setPriceMax] = useState(120);
   const [lotSize, setLotSize] = useState(50);
   const [issueSize, setIssueSize] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [allotmentDate, setAllotmentDate] = useState('');
-  const [listingDate, setListingDate] = useState('');
-  const [listingPrice, setListingPrice] = useState('');
   const [status, setStatus] = useState('open');
   const [gainEst, setGainEst] = useState('+₹150/sh Est.');
-  const [allotmentUrl, setAllotmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -43,14 +34,8 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       setPriceMax(ipoToEdit.price_band_max || 120);
       setLotSize(ipoToEdit.lot_size || 50);
       setIssueSize(ipoToEdit.issue_size || '');
-      setStartDate(ipoToEdit.start_date || '');
-      setEndDate(ipoToEdit.end_date || '');
-      setAllotmentDate(ipoToEdit.allotment_date || '');
-      setListingDate(ipoToEdit.listing_date || '');
-      setListingPrice(ipoToEdit.listing_price || '');
       setStatus(ipoToEdit.status || 'open');
       setGainEst(ipoToEdit.gain_est || '+₹150/sh Est.');
-      setAllotmentUrl(ipoToEdit.allotment_url || '');
     } else {
       setIpoName('');
       setSymbol('');
@@ -60,14 +45,8 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       setPriceMax(120);
       setLotSize(50);
       setIssueSize('');
-      setStartDate('');
-      setEndDate('');
-      setAllotmentDate('');
-      setListingDate('');
-      setListingPrice('');
       setStatus('open');
       setGainEst('+₹150/sh Est.');
-      setAllotmentUrl('');
     }
   }, [ipoToEdit, isOpen]);
 
@@ -97,14 +76,8 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       price_band_max: maxPriceNum,
       lot_size: lotSizeNum,
       issue_size: issueSize.trim() || null,
-      start_date: startDate || null,
-      end_date: endDate || null,
-      allotment_date: allotmentDate || null,
-      listing_date: listingDate || null,
-      listing_price: listingPrice ? Number(listingPrice) : null,
       status: status || 'open',
-      gain_est: gainEst.trim() || null,
-      allotment_url: allotmentUrl.trim() || null
+      gain_est: gainEst.trim() || null
     };
 
     try {
@@ -144,7 +117,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
         className="modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: '920px',
+          maxWidth: '840px',
           width: '92vw',
           maxHeight: '90vh',
           borderRadius: '28px',
@@ -181,7 +154,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
                 {ipoToEdit ? 'Edit IPO Parameters' : 'New IPO Offering'}
               </h2>
               <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                Configure NSE/BSE offering parameters, price band, and registrar link.
+                Configure NSE/BSE offering parameters, price band, and lot size.
               </p>
             </div>
           </div>
@@ -237,10 +210,10 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
             }}>
               <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Building2 size={16} />
-                1. Company & Stock Exchange Identification
+                1. Company &amp; Stock Exchange Identification
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                 <div>
                   <label className="input-label">IPO Name *</label>
                   <input
@@ -302,7 +275,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
             }}>
               <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <TrendingUp size={16} />
-                2. Price Band & Retail Lot Economics
+                2. Price Band &amp; Retail Lot Economics
               </h3>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
@@ -369,72 +342,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
                     placeholder="e.g. ₹2,830 Cr"
                     value={issueSize}
                     onChange={(e) => setIssueSize(e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* SECTION 3: Key Schedule & Dates */}
-            <div style={{
-              background: 'rgba(4, 47, 46, 0.02)',
-              border: '1px solid var(--panel-border)',
-              borderRadius: '20px',
-              padding: '20px'
-            }}>
-              <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={16} />
-                3. Key Schedule & Dates
-              </h3>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <div>
-                  <label className="input-label">Bid Open Date</label>
-                  <input
-                    type="date"
-                    className="input-field"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Bid Close Date</label>
-                  <input
-                    type="date"
-                    className="input-field"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Allotment Date</label>
-                  <input
-                    type="date"
-                    className="input-field"
-                    value={allotmentDate}
-                    onChange={(e) => setAllotmentDate(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Listing Date</label>
-                  <input
-                    type="date"
-                    className="input-field"
-                    value={listingDate}
-                    onChange={(e) => setListingDate(e.target.value)}
-                  />
-                </div>
-
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="input-label">Registrar Allotment URL</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. https://ris.kfintech.com/ipostatus/"
-                    value={allotmentUrl}
-                    onChange={(e) => setAllotmentUrl(e.target.value)}
                   />
                 </div>
               </div>

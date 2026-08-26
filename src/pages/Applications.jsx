@@ -382,7 +382,6 @@ export default function Applications({ onOpenExcelModal }) {
               <div style={{ display: 'flex', gap: '20px', marginTop: '8px', fontSize: '13.5px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                 <span>Issue Price Band: <strong style={{ color: 'var(--text-main)' }}>₹{activeSelectedIpo.price_band_min || 0} - ₹{activeSelectedIpo.price_band_max || 0}</strong></span>
                 <span>Lot Size: <strong style={{ color: 'var(--text-main)' }}>{activeSelectedIpo.lot_size || 1} shares</strong></span>
-                <span>Listing Date: <strong style={{ color: 'var(--text-main)' }}>{activeSelectedIpo.listing_date || 'TBA'}</strong></span>
                 {activeSelectedIpo.listing_price && (
                   <span style={{ color: 'var(--success-text)', fontWeight: 700 }}>
                     Official Listing Price: ₹{activeSelectedIpo.listing_price} ({activeSelectedIpo.gain_est || 'Listed'})

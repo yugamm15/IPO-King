@@ -304,12 +304,11 @@ export default function IpoMaster() {
         <table className="fintech-table">
           <thead>
             <tr>
-              <th>IPO Name & Exchange</th>
+              <th>IPO Name &amp; Exchange</th>
               <th>Board</th>
               <th>Price Band (₹)</th>
               <th>Lot Size</th>
               <th>Min Investment</th>
-              <th>Subscription Dates</th>
               <th>GMP / Gain Estimate</th>
               <th>Status</th>
               <th style={{ textAlign: 'center' }}>Actions</th>
@@ -318,10 +317,10 @@ export default function IpoMaster() {
           <tbody>
             {loading ? (
               <>
-                <SkeletonTableRow columns={9} />
-                <SkeletonTableRow columns={9} />
-                <SkeletonTableRow columns={9} />
-                <SkeletonTableRow columns={9} />
+                <SkeletonTableRow columns={8} />
+                <SkeletonTableRow columns={8} />
+                <SkeletonTableRow columns={8} />
+                <SkeletonTableRow columns={8} />
               </>
             ) : paginatedIpos.length > 0 ? (
               paginatedIpos.map((ipo) => {
@@ -352,11 +351,6 @@ export default function IpoMaster() {
                       <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>₹{minRetail.toLocaleString('en-IN')}</span>
                     </td>
                     <td>
-                      <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                        {ipo.subscription_open_date || ipo.open_date || 'Open'}
-                      </span>
-                    </td>
-                    <td>
                       <span className="badge badge-success" style={{ gap: '4px' }}>
                         <TrendingUp size={12} /> {ipo.gain_est || '+₹150/sh Est.'}
                       </span>
@@ -384,12 +378,6 @@ export default function IpoMaster() {
                               setListingModalIpo(ipo);
                               setCustomListingPrice(String(maxP));
                             }
-                          }] : []),
-                          ...(ipo.allotment_url ? [{
-                            icon: ExternalLink,
-                            label: 'Registrar Allotment',
-                            description: 'Check allotment on registrar',
-                            onClick: () => window.open(ipo.allotment_url, '_blank')
                           }] : []),
                           {
                             icon: Edit,
