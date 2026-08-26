@@ -12,6 +12,9 @@ import {
   X
 } from 'lucide-react';
 
+/**
+ * Custom IPO Selector Dropdown styled with Hero-11 Luxury Theme
+ */
 export default function IpoSelectorDropdown({
   ipos = [],
   selectedIpoId = 'All',
@@ -41,7 +44,6 @@ export default function IpoSelectorDropdown({
   };
 
   const totalAllApps = applications.length;
-
   const activeIpo = selectedIpoId !== 'All' ? ipos.find((i) => String(i.id) === String(selectedIpoId)) : null;
 
   // Filter IPOs in dropdown search
@@ -59,36 +61,35 @@ export default function IpoSelectorDropdown({
   const getStatusBadgeStyle = (status) => {
     const s = String(status || '').toLowerCase();
     if (s === 'listed') {
-      return { bg: 'rgba(16, 185, 129, 0.12)', color: '#059669', border: 'rgba(16, 185, 129, 0.25)', label: 'LISTED' };
+      return { bg: 'var(--success-light)', color: 'var(--success-text)', border: 'rgba(5, 150, 105, 0.2)', label: 'LISTED' };
     }
     if (s === 'open' || s === 'active') {
-      return { bg: 'rgba(37, 99, 235, 0.12)', color: '#2563EB', border: 'rgba(37, 99, 235, 0.25)', label: 'OPEN' };
+      return { bg: 'rgba(13, 148, 136, 0.1)', color: 'var(--brand-accent)', border: 'rgba(13, 148, 136, 0.25)', label: 'OPEN' };
     }
     if (s === 'closed') {
-      return { bg: 'rgba(100, 116, 139, 0.12)', color: '#64748B', border: 'rgba(100, 116, 139, 0.25)', label: 'CLOSED' };
+      return { bg: 'rgba(4, 47, 46, 0.06)', color: 'var(--text-muted)', border: 'var(--panel-border)', label: 'CLOSED' };
     }
-    return { bg: 'rgba(217, 119, 6, 0.12)', color: '#D97706', border: 'rgba(217, 119, 6, 0.25)', label: (status || 'UPCOMING').toUpperCase() };
+    return { bg: 'var(--warning-light)', color: 'var(--warning)', border: 'rgba(217, 119, 6, 0.2)', label: (status || 'UPCOMING').toUpperCase() };
   };
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', width: '100%', marginBottom: '24px' }}>
-      {/* Trigger Card Button */}
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      {/* Trigger Card Button (Hero-11) */}
       <div
         onClick={() => setIsOpen(!isOpen)}
-        className="glass-panel"
         style={{
-          padding: '14px 20px',
-          borderRadius: '16px',
-          background: 'var(--card-bg, #FFFFFF)',
+          padding: '16px 20px',
+          borderRadius: '18px',
+          background: 'var(--panel-bg)',
           border: '1.5px solid',
-          borderColor: isOpen ? 'var(--primary, #2563EB)' : 'var(--panel-border, #E2E8F0)',
-          boxShadow: isOpen ? '0 8px 24px rgba(37, 99, 235, 0.12)' : '0 2px 8px rgba(0, 0, 0, 0.04)',
+          borderColor: isOpen ? 'var(--primary)' : 'var(--panel-border)',
+          boxShadow: isOpen ? 'var(--panel-shadow-hover)' : 'var(--panel-shadow)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '16px',
-          transition: 'all 0.2s ease',
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
           userSelect: 'none'
         }}
       >
@@ -100,13 +101,13 @@ export default function IpoSelectorDropdown({
                 width: '44px',
                 height: '44px',
                 borderRadius: '12px',
-                background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
-                color: '#FFFFFF',
+                background: 'var(--primary)',
+                color: '#FAF6EC',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
+                boxShadow: '0 4px 12px rgba(4, 47, 46, 0.2)'
               }}
             >
               <Globe size={22} />
@@ -118,17 +119,16 @@ export default function IpoSelectorDropdown({
                 height: '44px',
                 borderRadius: '12px',
                 background: activeIpo?.ipo_type === 'SME'
-                  ? 'linear-gradient(135deg, #6D28D9 0%, #8B5CF6 100%)'
-                  : 'linear-gradient(135deg, #047857 0%, #10B981 100%)',
-                color: '#FFFFFF',
+                  ? 'linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%)'
+                  : 'linear-gradient(135deg, #042F2E 0%, #0D9488 100%)',
+                color: '#FAF6EC',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
                 fontWeight: 800,
                 fontSize: '1.15rem',
-                fontFamily: 'Manrope',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+                fontFamily: 'var(--font-heading)'
               }}
             >
               {(activeIpo?.ipo_name || 'I')[0].toUpperCase()}
@@ -139,11 +139,11 @@ export default function IpoSelectorDropdown({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
               <span
                 style={{
-                  fontSize: '0.72rem',
+                  fontSize: '11px',
                   fontWeight: 800,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.6px',
-                  color: 'var(--primary, #2563EB)'
+                  letterSpacing: '0.06em',
+                  color: 'var(--brand-accent)'
                 }}
               >
                 Selected Offering Filter
@@ -151,14 +151,8 @@ export default function IpoSelectorDropdown({
               {selectedIpoId !== 'All' && activeIpo && (
                 <>
                   <span
-                    style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      padding: '2px 7px',
-                      borderRadius: '6px',
-                      background: activeIpo.ipo_type === 'SME' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(37, 99, 235, 0.12)',
-                      color: activeIpo.ipo_type === 'SME' ? '#7C3AED' : '#2563EB'
-                    }}
+                    className={`badge ${activeIpo.ipo_type === 'SME' ? 'badge-purple' : 'badge-teal'}`}
+                    style={{ fontSize: '11px', padding: '1px 7px' }}
                   >
                     {activeIpo.ipo_type || 'Mainboard'}
                   </span>
@@ -167,9 +161,9 @@ export default function IpoSelectorDropdown({
                     return (
                       <span
                         style={{
-                          fontSize: '0.7rem',
+                          fontSize: '11px',
                           fontWeight: 700,
-                          padding: '2px 7px',
+                          padding: '1px 7px',
                           borderRadius: '6px',
                           background: st.bg,
                           color: st.color,
@@ -188,10 +182,9 @@ export default function IpoSelectorDropdown({
               <h3
                 style={{
                   margin: 0,
-                  fontSize: '1.08rem',
+                  fontSize: '17px',
                   fontWeight: 800,
-                  color: 'var(--text-main, #0F172A)',
-                  fontFamily: 'Manrope',
+                  color: 'var(--text-main)',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis'
@@ -201,11 +194,11 @@ export default function IpoSelectorDropdown({
               </h3>
 
               {selectedIpoId === 'All' ? (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #64748B)' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                   ({ipos.length} IPO Offerings Tracked)
                 </span>
               ) : (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #64748B)' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                   Issue: <strong>₹{activeIpo?.price_band_min || 0} - ₹{activeIpo?.price_band_max || 0}</strong> • Lot: <strong>{activeIpo?.lot_size || 1} sh</strong>
                 </span>
               )}
@@ -219,16 +212,16 @@ export default function IpoSelectorDropdown({
             style={{
               padding: '6px 12px',
               borderRadius: '20px',
-              background: 'var(--input-bg, #F1F5F9)',
-              color: 'var(--text-main, #0F172A)',
-              fontSize: '0.8rem',
+              background: 'rgba(4, 47, 46, 0.05)',
+              color: 'var(--text-main)',
+              fontSize: '12.5px',
               fontWeight: 700,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '5px'
+              gap: '6px'
             }}
           >
-            <span style={{ color: 'var(--primary, #2563EB)' }}>●</span>
+            <span style={{ color: 'var(--brand-accent)' }}>●</span>
             {selectedIpoId === 'All' ? `${totalAllApps} Applications Total` : `${getAppCountForIpo(selectedIpoId)} Applications`}
           </span>
 
@@ -237,8 +230,8 @@ export default function IpoSelectorDropdown({
               width: '32px',
               height: '32px',
               borderRadius: '8px',
-              background: isOpen ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
-              color: isOpen ? 'var(--primary, #2563EB)' : 'var(--text-muted, #64748B)',
+              background: isOpen ? 'rgba(4, 47, 46, 0.08)' : 'transparent',
+              color: 'var(--text-main)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -251,24 +244,21 @@ export default function IpoSelectorDropdown({
         </div>
       </div>
 
-      {/* Popover Menu Dropdown */}
+      {/* Popover Menu Dropdown (Hero-11 + Watermelon Dropdown) */}
       {isOpen && (
         <div
+          className="dropdown-menu-4-card"
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
             left: 0,
             right: 0,
             zIndex: 9999,
-            background: 'var(--card-bg, #FFFFFF)',
-            borderRadius: '18px',
-            border: '1.5px solid var(--panel-border, #E2E8F0)',
-            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.18)',
+            borderRadius: '20px',
             padding: '12px',
-            maxHeight: '420px',
+            maxHeight: '440px',
             display: 'flex',
-            flexDirection: 'column',
-            animation: 'fadeIn 0.15s ease-out'
+            flexDirection: 'column'
           }}
         >
           {/* Quick Search inside Dropdown */}
@@ -280,7 +270,7 @@ export default function IpoSelectorDropdown({
                 left: '12px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--text-dim, #94A3B8)'
+                color: 'var(--text-dim)'
               }}
             />
             <input
@@ -295,10 +285,8 @@ export default function IpoSelectorDropdown({
                 paddingLeft: '34px',
                 paddingRight: '30px',
                 height: '38px',
-                fontSize: '0.84rem',
-                borderRadius: '10px',
-                background: 'var(--input-bg, #F8FAFC)',
-                border: '1px solid var(--panel-border, #E2E8F0)'
+                fontSize: '13px',
+                borderRadius: '10px'
               }}
               autoFocus
             />
@@ -316,7 +304,7 @@ export default function IpoSelectorDropdown({
                   transform: 'translateY(-50%)',
                   background: 'none',
                   border: 'none',
-                  color: 'var(--text-dim, #94A3B8)',
+                  color: 'var(--text-dim)',
                   cursor: 'pointer',
                   padding: 0
                 }}
@@ -338,21 +326,15 @@ export default function IpoSelectorDropdown({
                 style={{
                   padding: '12px 14px',
                   borderRadius: '12px',
-                  background: selectedIpoId === 'All' ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                  background: selectedIpoId === 'All' ? 'rgba(4, 47, 46, 0.06)' : 'transparent',
                   border: '1.5px solid',
-                  borderColor: selectedIpoId === 'All' ? 'var(--primary, #2563EB)' : 'transparent',
+                  borderColor: selectedIpoId === 'All' ? 'var(--primary)' : 'transparent',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: '12px',
                   transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  if (selectedIpoId !== 'All') e.currentTarget.style.background = 'var(--input-bg, #F8FAFC)';
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedIpoId !== 'All') e.currentTarget.style.background = 'transparent';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -361,8 +343,8 @@ export default function IpoSelectorDropdown({
                       width: '38px',
                       height: '38px',
                       borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
-                      color: '#FFFFFF',
+                      background: 'var(--primary)',
+                      color: '#FAF6EC',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -372,10 +354,10 @@ export default function IpoSelectorDropdown({
                     <Globe size={18} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main, #0F172A)' }}>
+                    <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--text-main)' }}>
                       All IPO Offerings Ledger
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #64748B)' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       Show all customer applications across {ipos.length} IPO offerings
                     </div>
                   </div>
@@ -384,17 +366,17 @@ export default function IpoSelectorDropdown({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span
                     style={{
-                      fontSize: '0.76rem',
+                      fontSize: '12px',
                       fontWeight: 700,
                       padding: '3px 8px',
                       borderRadius: '6px',
-                      background: 'var(--input-bg, #F1F5F9)',
-                      color: 'var(--text-main, #0F172A)'
+                      background: 'rgba(4, 47, 46, 0.05)',
+                      color: 'var(--text-main)'
                     }}
                   >
                     {totalAllApps} Total Bids
                   </span>
-                  {selectedIpoId === 'All' && <Check size={18} style={{ color: 'var(--primary, #2563EB)', strokeWidth: 3 }} />}
+                  {selectedIpoId === 'All' && <Check size={18} style={{ color: 'var(--primary)', strokeWidth: 3 }} />}
                 </div>
               </div>
             )}
@@ -418,21 +400,15 @@ export default function IpoSelectorDropdown({
                   style={{
                     padding: '12px 14px',
                     borderRadius: '12px',
-                    background: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                    background: isSelected ? 'rgba(4, 47, 46, 0.06)' : 'transparent',
                     border: '1.5px solid',
-                    borderColor: isSelected ? 'var(--primary, #2563EB)' : 'transparent',
+                    borderColor: isSelected ? 'var(--primary)' : 'transparent',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: '12px',
                     transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = 'var(--input-bg, #F8FAFC)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = 'transparent';
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
@@ -442,16 +418,15 @@ export default function IpoSelectorDropdown({
                         height: '38px',
                         borderRadius: '10px',
                         background: ipo.ipo_type === 'SME'
-                          ? 'linear-gradient(135deg, #6D28D9 0%, #8B5CF6 100%)'
-                          : 'linear-gradient(135deg, #047857 0%, #10B981 100%)',
-                        color: '#FFFFFF',
+                          ? 'linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%)'
+                          : 'linear-gradient(135deg, #042F2E 0%, #0D9488 100%)',
+                        color: '#FAF6EC',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0,
                         fontWeight: 800,
-                        fontSize: '1rem',
-                        fontFamily: 'Manrope'
+                        fontSize: '15px'
                       }}
                     >
                       {(ipo.ipo_name || 'I')[0].toUpperCase()}
@@ -459,26 +434,20 @@ export default function IpoSelectorDropdown({
 
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main, #0F172A)' }}>
+                        <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--text-main)' }}>
                           {ipo.ipo_name}
                         </span>
                         <span
-                          style={{
-                            fontSize: '0.68rem',
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: '5px',
-                            background: ipo.ipo_type === 'SME' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(37, 99, 235, 0.12)',
-                            color: ipo.ipo_type === 'SME' ? '#7C3AED' : '#2563EB'
-                          }}
+                          className={`badge ${ipo.ipo_type === 'SME' ? 'badge-purple' : 'badge-teal'}`}
+                          style={{ fontSize: '10.5px', padding: '1px 6px' }}
                         >
                           {ipo.ipo_type || 'Mainboard'}
                         </span>
                         <span
                           style={{
-                            fontSize: '0.68rem',
+                            fontSize: '10.5px',
                             fontWeight: 700,
-                            padding: '2px 6px',
+                            padding: '1px 6px',
                             borderRadius: '5px',
                             background: st.bg,
                             color: st.color,
@@ -489,7 +458,7 @@ export default function IpoSelectorDropdown({
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #64748B)', marginTop: '2px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                         Price: <strong>₹{minP} - ₹{maxP}</strong> • Lot: <strong>{lot} sh</strong> • Min: ₹{(maxP * lot).toLocaleString('en-IN')}
                       </div>
                     </div>
@@ -498,24 +467,24 @@ export default function IpoSelectorDropdown({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     <span
                       style={{
-                        fontSize: '0.76rem',
+                        fontSize: '12px',
                         fontWeight: 700,
                         padding: '3px 8px',
                         borderRadius: '6px',
-                        background: 'var(--input-bg, #F1F5F9)',
-                        color: 'var(--text-main, #0F172A)'
+                        background: 'rgba(4, 47, 46, 0.05)',
+                        color: 'var(--text-main)'
                       }}
                     >
                       {appCount} Bids
                     </span>
-                    {isSelected && <Check size={18} style={{ color: 'var(--primary, #2563EB)', strokeWidth: 3 }} />}
+                    {isSelected && <Check size={18} style={{ color: 'var(--primary)', strokeWidth: 3 }} />}
                   </div>
                 </div>
               );
             })}
 
             {filteredIpos.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted, #64748B)', fontSize: '0.86rem' }}>
+              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
                 No IPOs match "{searchQuery}"
               </div>
             )}

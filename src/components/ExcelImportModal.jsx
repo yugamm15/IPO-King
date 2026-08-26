@@ -1,29 +1,82 @@
-import React, { useState, useRef } from 'react';
-import { FileSpreadsheet, UploadCloud, Download, FileText, X } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import {
+  FileSpreadsheet,
+  UploadCloud,
+  Download,
+  FileText,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+  FileCheck
+} from 'lucide-react';
 import { useToast } from '../context/ToastContext.jsx';
 import { bulkInsertApplications } from '../services/db.js';
 
+/**
+ * Excel Customer Manager Modal powered by Watermelon UI File-Upload-2 & Hero-11 Theme
+ */
 export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('import'); // 'import' | 'export'
   const [selectedFile, setSelectedFile] = useState(null);
-  const [importStatus, setImportStatus] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileProgress, setFileProgress] = useState(0);
+  const [fileStatus, setFileStatus] = useState('idle'); // 'idle' | 'ready' | 'uploading' | 'success' | 'error'
+  const [statusMessage, setStatusMessage] = useState('');
   const fileInputRef = useRef(null);
 
   if (!isOpen) return null;
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      processSelectedFile(file);
+    }
+  };
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setSelectedFile(file);
-      setImportStatus(`File selected: "${file.name}". Ready to process column mapping.`);
+      processSelectedFile(file);
     }
+  };
+
+  const processSelectedFile = (file) => {
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+
+    if (!hasValidExt) {
+      showToast('Please upload a valid Excel or CSV document (.xlsx, .xls, .csv)', 'warning');
+      return;
+    }
+
+    setSelectedFile(file);
+    setFileStatus('ready');
+    setFileProgress(100);
+    setStatusMessage(`File "${file.name}" ready to import.`);
   };
 
   const parseCsvText = (text) => {
     const lines = text.split(/\r\n|\n/).filter(line => line.trim());
     if (lines.length <= 1) return [];
-    
+
     const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
     const rows = [];
 
@@ -57,34 +110,41 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
       showToast('Please select an Excel (.xlsx, .csv) file to import.', 'warning');
       return;
     }
-    setImportStatus('Processing file and syncing records into Supabase database...');
-    
+
+    setFileStatus('uploading');
+    setStatusMessage('Parsing records and syncing into database ledger...');
+
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const text = e.target.result;
         const parsedRows = parseCsvText(text);
-        
+
         if (parsedRows.length === 0) {
-          setImportStatus('⚠️ No valid rows found in file. Please ensure the CSV format matches the template.');
+          setFileStatus('error');
+          setStatusMessage('⚠️ No valid data rows found. Check column headers.');
           showToast('No valid rows found to import', 'warning');
           return;
         }
 
         const result = await bulkInsertApplications(parsedRows);
 
-        setImportStatus(`✅ Import complete! Successfully processed & imported ${result.count} records.`);
+        setFileStatus('success');
+        setStatusMessage(`✅ Success! Imported ${result.count} customer applications.`);
         showToast(`Successfully imported ${result.count} customer applications!`, 'success');
+
         setTimeout(() => {
           setSelectedFile(null);
-          setImportStatus('');
+          setFileStatus('idle');
+          setStatusMessage('');
           onClose();
         }, 1200);
       };
       reader.readAsText(selectedFile);
     } catch (err) {
       console.error('File import error:', err);
-      setImportStatus('❌ Error importing file. Please check format.');
+      setFileStatus('error');
+      setStatusMessage('❌ Error importing file. Please check format.');
       showToast('Failed to import file.', 'error');
     }
   };
@@ -161,6 +221,12 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
     document.body.removeChild(link);
   };
 
+  const formatFileSize = (bytes) => {
+    if (!bytes || bytes === 0) return '0 KB';
+    const k = 1024;
+    return `${(bytes / k).toFixed(1)} KB`;
+  };
+
   const mappings = [
     { col: 'NO.', db: 'customer_no' },
     { col: 'NAME', db: 'full_name' },
@@ -182,80 +248,92 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
   ];
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px'
-    }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        maxWidth: '740px', width: '100%', maxHeight: '88vh', overflowY: 'auto', borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)', border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#0F172A'
-      }}>
-        {/* Header */}
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '720px', borderRadius: '32px', padding: '0', overflow: 'hidden' }}
+      >
+        {/* Hero-11 Modal Header */}
         <div style={{
-          padding: '18px 24px', borderBottom: '1px solid #E2E8F0',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF',
-          borderTopLeftRadius: '16px', borderTopRightRadius: '16px'
+          padding: '24px 28px',
+          borderBottom: '1px solid var(--panel-border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'var(--panel-bg)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileSpreadsheet size={22} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '14px',
+              background: 'rgba(4, 47, 46, 0.06)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <FileSpreadsheet size={24} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 700, color: 'var(--text-main)' }}>
                 Excel Customer Manager
               </h3>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
+              <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
                 Bulk Import & Export 17 Customer Excel Fields
               </p>
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748B', lineHeight: 1 }}>&times;</button>
-        </div>
-
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', padding: '0 24px' }}>
           <button
-            onClick={() => setActiveTab('import')}
+            onClick={onClose}
             style={{
-              padding: '12px 20px', background: activeTab === 'import' ? '#FFFFFF' : 'transparent',
-              border: 'none', borderBottom: activeTab === 'import' ? '2px solid #2563EB' : '2px solid transparent',
-              color: activeTab === 'import' ? '#2563EB' : '#64748B',
-              fontWeight: 600, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+              background: 'rgba(4, 47, 46, 0.05)',
+              border: 'none',
+              borderRadius: '10px',
+              width: '34px',
+              height: '34px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-muted)'
             }}
           >
-            <UploadCloud size={16} /> Bulk Import (.XLSX)
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tab Selection (Hero-11 Pill Style) */}
+        <div style={{ display: 'flex', gap: '8px', padding: '12px 28px', background: 'var(--table-header-bg)', borderBottom: '1px solid var(--panel-border)' }}>
+          <button
+            onClick={() => setActiveTab('import')}
+            className={`btn ${activeTab === 'import' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', fontSize: '13px', borderRadius: '10px' }}
+          >
+            <UploadCloud size={15} /> Bulk Import (.XLSX)
           </button>
           <button
             onClick={() => setActiveTab('export')}
-            style={{
-              padding: '12px 20px', background: activeTab === 'export' ? '#FFFFFF' : 'transparent',
-              border: 'none', borderBottom: activeTab === 'export' ? '2px solid #2563EB' : '2px solid transparent',
-              color: activeTab === 'export' ? '#2563EB' : '#64748B',
-              fontWeight: 600, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-            }}
+            className={`btn ${activeTab === 'export' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '8px 18px', fontSize: '13px', borderRadius: '10px' }}
           >
-            <Download size={16} /> Bulk Export (.CSV / .XLSX)
+            <Download size={15} /> Bulk Export (.CSV / .XLSX)
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div style={{ padding: '24px', background: '#FFFFFF' }}>
+        {/* Modal Body with Watermelon File-Upload-2 */}
+        <div style={{ padding: '28px', overflowY: 'auto', maxHeight: 'calc(92vh - 160px)' }}>
           {activeTab === 'import' ? (
             <div>
-              {/* Dropzone */}
-              <div style={{
-                border: '2px dashed #3B82F6', borderRadius: '12px', padding: '28px 20px',
-                textAlign: 'center', background: '#F0F6FF', marginBottom: '20px'
-              }}>
-                <UploadCloud size={40} style={{ color: '#2563EB', marginBottom: '8px' }} />
-                <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 600, color: '#1E293B' }}>
-                  Drag & Drop your Customer Excel file here
-                </h4>
-                <p style={{ margin: '0 0 16px', fontSize: '12px', color: '#64748B' }}>
-                  Supports .xlsx, .xls, .csv files containing 17 customer columns
-                </p>
-
+              {/* File-Upload-2 Dropzone */}
+              <div
+                className={`file-upload-2-dropzone ${isDragging ? 'dragging' : ''}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -264,24 +342,47 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
                   style={{ display: 'none' }}
                 />
 
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(4, 47, 46, 0.08)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px auto',
+                  transition: 'transform 0.2s ease'
+                }}>
+                  <UploadCloud size={30} />
+                </div>
+
+                <h4 style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Click to upload <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>or drag and drop</span>
+                </h4>
+                <p style={{ margin: '0 0 18px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                  XLSX, XLS, or CSV format (17 mapped customer columns)
+                </p>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                    style={{
-                      background: '#2563EB', color: '#FFFFFF', border: 'none',
-                      borderRadius: '8px', padding: '8px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer'
+                    className="btn btn-primary"
+                    style={{ padding: '8px 18px', fontSize: '13px' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
                     }}
                   >
-                    Browse Excel File
+                    Browse Files
                   </button>
                   <button
                     type="button"
-                    onClick={handleDownloadSample}
-                    style={{
-                      background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#334155',
-                      borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                      display: 'inline-flex', alignItems: 'center', gap: '6px'
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadSample();
                     }}
                   >
                     <Download size={14} /> Download Sample Template
@@ -289,34 +390,122 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
                 </div>
               </div>
 
+              {/* Uploaded File Queue Item (Watermelon File-Upload-2 File Card) */}
               {selectedFile && (
-                <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46', padding: '12px 16px', borderRadius: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FileText size={18} />
-                    <span>Selected: <strong>{selectedFile.name}</strong> ({Math.round(selectedFile.size / 1024)} KB)</span>
+                <div style={{
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  marginTop: '18px',
+                  boxShadow: '0 2px 8px rgba(4, 47, 46, 0.04)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: 'rgba(4, 47, 46, 0.06)',
+                      color: 'var(--primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <FileCheck size={22} />
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px' }}>
+                          {selectedFile.name}
+                        </span>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {fileStatus === 'success' && (
+                            <span className="badge badge-success">
+                              <CheckCircle2 size={12} /> Done
+                            </span>
+                          )}
+                          {fileStatus === 'error' && (
+                            <span className="badge badge-danger">
+                              <AlertCircle size={12} /> Failed
+                            </span>
+                          )}
+                          {fileStatus === 'ready' && (
+                            <span className="badge badge-teal">
+                              Ready to Parse
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFile(null);
+                              setFileStatus('idle');
+                              setStatusMessage('');
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--danger)',
+                              cursor: 'pointer',
+                              padding: '4px'
+                            }}
+                            aria-label="Remove File"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        <span>{formatFileSize(selectedFile.size)}</span>
+                        {statusMessage && (
+                          <>
+                            <span>•</span>
+                            <span style={{ color: fileStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)' }}>
+                              {statusMessage}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={handleImportSubmit} style={{ background: '#10B981', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, padding: '6px 14px', cursor: 'pointer' }}>
-                    Start Import
-                  </button>
+
+                  {fileStatus !== 'success' && (
+                    <button
+                      type="button"
+                      onClick={handleImportSubmit}
+                      className="btn btn-teal"
+                      style={{ width: '100%', marginTop: '14px', padding: '10px', fontSize: '14px' }}
+                      disabled={fileStatus === 'uploading'}
+                    >
+                      {fileStatus === 'uploading' ? 'Importing Applications...' : 'Confirm & Import to Database'}
+                    </button>
+                  )}
                 </div>
               )}
 
-              {importStatus && (
-                <div style={{ fontSize: '12px', color: '#0F172A', marginBottom: '16px', padding: '10px 14px', background: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                  {importStatus}
-                </div>
-              )}
-
-              {/* Column Mapping Grid */}
-              <div>
-                <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#2563EB', fontWeight: 700, marginBottom: '12px' }}>
-                  17 EXCEL COLUMNS MAPPED:
+              {/* 17 Mapped Columns Specification */}
+              <div style={{ marginTop: '24px' }}>
+                <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--brand-accent)', fontWeight: 700, marginBottom: '12px' }}>
+                  17 Excel Columns Auto-Mapped:
                 </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px' }}>
                   {mappings.map((m, idx) => (
-                    <div key={idx} style={{ background: '#F8FAFC', padding: '8px 12px', borderRadius: '6px', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, color: '#0F172A' }}>{m.col}</span>
-                      <span style={{ fontSize: '11px', color: '#64748B' }}>&rarr; {m.db}</span>
+                    <div key={idx} style={{
+                      background: 'rgba(4, 47, 46, 0.03)',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--panel-border)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '12px'
+                    }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{m.col}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>&rarr; {m.db}</span>
                     </div>
                   ))}
                 </div>
@@ -324,23 +513,39 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
             </div>
           ) : (
             <div>
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '28px 20px', textAlign: 'center' }}>
-                <Download size={40} style={{ color: '#2563EB', marginBottom: '12px' }} />
-                <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+              <div style={{
+                background: 'rgba(4, 47, 46, 0.02)',
+                border: '1px solid var(--panel-border)',
+                borderRadius: '24px',
+                padding: '36px 24px',
+                textAlign: 'center'
+              }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(4, 47, 46, 0.08)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px auto'
+                }}>
+                  <Download size={32} />
+                </div>
+
+                <h4 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--text-main)' }}>
                   Export All Customer Records
                 </h4>
-                <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748B', maxWidth: '440px', marginInline: 'auto' }}>
-                  Download all registered customer records with all 17 Excel fields pre-formatted and ready for reporting or offline analysis.
+                <p style={{ margin: '0 auto 24px auto', fontSize: '13.5px', color: 'var(--text-muted)', maxWidth: '440px' }}>
+                  Download all registered customer records with all 17 Excel fields formatted and ready for accounting or offline analysis.
                 </p>
 
                 <button
                   type="button"
                   onClick={handleExportCustomers}
-                  style={{
-                    background: '#2563EB', color: '#FFFFFF', border: 'none',
-                    borderRadius: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-                    display: 'inline-flex', alignItems: 'center', gap: '8px'
-                  }}
+                  className="btn btn-primary"
+                  style={{ padding: '12px 28px', fontSize: '14px' }}
                 >
                   <Download size={16} /> Export Customers to Excel (.CSV)
                 </button>

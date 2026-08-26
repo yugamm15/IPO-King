@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { Wallet, Search, RefreshCw, Database, FileText, CheckCircle2, X } from 'lucide-react';
-import { supabase, fetchApplicationsLedger, subscribeToRealtimeChanges } from '../services/db.js';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Wallet, Search, RefreshCw, Database, FileText, X } from 'lucide-react';
+import { fetchApplicationsLedger, subscribeToRealtimeChanges } from '../services/db.js';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 import { downloadPayoutVoucherPdf } from '../utils/pdfGenerator.js';
+import Pagination from '../components/Pagination.jsx';
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Pagination-2 State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadPayments = async () => {
     setLoading(true);
@@ -57,43 +62,80 @@ export default function Payments() {
     };
   }, []);
 
-  const filteredPayments = payments.filter((p) => {
+  const filteredPayments = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return (
-      !q ||
-      p.customer.toLowerCase().includes(q) ||
-      p.txn_id.toLowerCase().includes(q) ||
-      p.beneficiary.toLowerCase().includes(q)
-    );
-  });
+    return payments.filter((p) => {
+      return (
+        !q ||
+        p.customer.toLowerCase().includes(q) ||
+        p.txn_id.toLowerCase().includes(q) ||
+        p.beneficiary.toLowerCase().includes(q)
+      );
+    });
+  }, [payments, searchQuery]);
+
+  // Paginated Payments
+  const paginatedPayments = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredPayments.slice(start, start + pageSize);
+  }, [filteredPayments, currentPage, pageSize]);
 
   const handleDownloadReceipt = (row) => {
     downloadPayoutVoucherPdf(row);
   };
 
   return (
-    <div className="tab-pane active" style={{ paddingBottom: '40px' }}>
-      
-      {/* Top Header */}
-      <div className="welcome-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+    <div className="page-content" style={{ padding: '0' }}>
+
+      {/* Top Header (Hero-11) */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '16px'
+      }}>
         <div>
-          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Wallet size={24} style={{ color: 'var(--primary)' }} /> Payments & Profit Distribution (40-60 Split & 10% TDS)
-          </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
-            Manual bank transfers, beneficiary payout vouchers, and automated tax withholding ledger.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.03em' }}>
+              Payments & Profit Distribution
+            </h1>
+            <span className="badge badge-teal">
+              40-60 Split & 10% TDS
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-muted)' }}>
+            Bank transfer coordinates, beneficiary payout vouchers, and automated tax withholding ledger.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={loadPayments} title="Refresh Payments Data">
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadPayments}
+            title="Refresh Payments Data"
+            style={{ padding: '9px 14px' }}
+          >
             <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh Ledger
           </button>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="glass-panel" style={{ padding: '16px 20px', borderRadius: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Search Toolbar */}
+      <div style={{
+        background: 'var(--panel-bg)',
+        border: '1px solid var(--panel-border)',
+        borderRadius: '16px',
+        padding: '14px 18px',
+        marginBottom: '18px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '16px',
+        flexWrap: 'wrap'
+      }}>
         <div style={{ position: 'relative', minWidth: '280px', maxWidth: '380px', flex: '1 1 300px' }}>
           <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
           <input
@@ -101,21 +143,25 @@ export default function Payments() {
             className="input-field"
             placeholder="Search payment by Txn ID or name..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             style={{
               paddingLeft: '38px',
               paddingRight: searchQuery ? '36px' : '14px',
-              height: '40px',
-              fontSize: '0.88rem',
-              borderRadius: '12px',
-              width: '100%',
-              boxSizing: 'border-box'
+              height: '38px',
+              fontSize: '13.5px',
+              borderRadius: '12px'
             }}
           />
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
               style={{
                 position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
                 background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
@@ -127,69 +173,81 @@ export default function Payments() {
           )}
         </div>
 
-        <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
+        <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>
           Showing {filteredPayments.length} of {payments.length} verified payouts
         </span>
       </div>
 
-      {/* Main Table */}
-      <div className="card glass-panel" style={{ padding: 0, borderRadius: '16px', overflow: 'hidden' }}>
-        <div className="table-responsive">
-          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th>Txn ID</th>
-                <th>Customer</th>
-                <th>Beneficiary Account</th>
-                <th>Gross Gain</th>
-                <th>40% Profit Share</th>
-                <th>10% TDS</th>
-                <th>Payout Net</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <>
-                  <SkeletonTableRow columns={9} />
-                  <SkeletonTableRow columns={9} />
-                  <SkeletonTableRow columns={9} />
-                  <SkeletonTableRow columns={9} />
-                </>
-              ) : filteredPayments.length > 0 ? (
-                filteredPayments.map((row) => (
-                  <tr key={row.txn_id}>
-                    <td><code>{row.txn_id}</code></td>
-                    <td><strong>{row.customer}</strong></td>
-                    <td><span style={{ fontSize: '0.84rem' }}>{row.beneficiary}</span></td>
-                    <td>{row.gross_amount}</td>
-                    <td className="text-green font-bold">{row.profit_40}</td>
-                    <td className="text-amber font-semibold">{row.tds_10}</td>
-                    <td><strong style={{ color: 'var(--primary)', fontSize: '0.94rem' }}>{row.net_payout}</strong></td>
-                    <td><span className="status-badge open">{row.status}</span></td>
-                    <td>
-                      <button
-                        className="btn-xs btn-outline"
-                        onClick={() => handleDownloadReceipt(row)}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <FileText size={12} /> Voucher
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-                    <Database size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                    <p>No verified payout transactions found.</p>
+      {/* Main Table Card (Hero-11 Fintech Table) */}
+      <div className="table-container">
+        <table className="fintech-table">
+          <thead>
+            <tr>
+              <th>Txn ID</th>
+              <th>Customer</th>
+              <th>Beneficiary Account</th>
+              <th>Gross Gain</th>
+              <th>40% Profit Share</th>
+              <th>10% TDS</th>
+              <th>Payout Net</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'center' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <>
+                <SkeletonTableRow columns={9} />
+                <SkeletonTableRow columns={9} />
+                <SkeletonTableRow columns={9} />
+                <SkeletonTableRow columns={9} />
+              </>
+            ) : paginatedPayments.length > 0 ? (
+              paginatedPayments.map((row) => (
+                <tr key={row.txn_id}>
+                  <td><code style={{ background: 'rgba(4, 47, 46, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--primary)' }}>{row.txn_id}</code></td>
+                  <td><strong style={{ color: 'var(--text-main)' }}>{row.customer}</strong></td>
+                  <td><span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{row.beneficiary}</span></td>
+                  <td>{row.gross_amount}</td>
+                  <td><strong style={{ color: 'var(--success-text)' }}>{row.profit_40}</strong></td>
+                  <td><span style={{ color: 'var(--warning)', fontWeight: 600 }}>{row.tds_10}</span></td>
+                  <td><strong style={{ color: 'var(--primary)', fontSize: '14px' }}>{row.net_payout}</strong></td>
+                  <td>
+                    <span className="badge badge-teal">
+                      {row.status}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => handleDownloadReceipt(row)}
+                      style={{ padding: '6px 12px', fontSize: '12px', gap: '5px' }}
+                    >
+                      <FileText size={13} /> Voucher PDF
+                    </button>
                   </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <Database size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>No verified payout transactions found.</p>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {/* Watermelon Pagination-2 Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredPayments.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
     </div>
