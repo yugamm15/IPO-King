@@ -42,7 +42,10 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
   const lotSize = Number(app.lot_size) || (app.quantity && app.lots_applied ? Math.floor(app.quantity / app.lots_applied) : 50) || 50;
   const rawLots = Number(app.lots_applied) || 1;
   const rawQty = Number(app.quantity) || (rawLots * lotSize);
-  const issuePrice = Number(app.price_band_max) || Number(app.price_band_min) || Number(app.issue_price) || 100;
+  const calculatedUnit = (app.bid_amount && app.quantity) ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : 0;
+  const issuePrice = Number(app.price_band_max) > 0
+    ? Number(app.price_band_max)
+    : (Number(app.issue_price) > 0 ? Number(app.issue_price) : (calculatedUnit > 0 ? calculatedUnit : (Number(app.price_band_min) || 100)));
 
   // Live Calculations
   let sampleGross = 0;
