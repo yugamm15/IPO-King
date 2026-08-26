@@ -14,7 +14,10 @@ build/
 
 # Scratch & temporary logs
 scratch/
+.dbg/
 *.log
+*.env
+*.ndjson
 
 # IDE files
 .vscode/
