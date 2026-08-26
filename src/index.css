@@ -115,6 +115,11 @@ body.dark-theme {
    Base Elements & Global Reset
    ========================================================================== */
 
+html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -159,7 +164,6 @@ button, input, select, textarea {
     flex-direction: column;
     min-width: 0;
     background-color: var(--bg-main);
-    transition: all 0.2s ease;
 }
 
 .content-body {
@@ -189,27 +193,42 @@ button, input, select, textarea {
 }
 
 /* ==========================================================================
-   Hero-11 Top Floating Navbar
+   Hero-11 Top Locked Floating Navbar
    ========================================================================== */
 
 .navbar-container {
     height: 72px;
-    background: rgba(250, 247, 242, 0.92);
+    min-height: 72px;
+    max-height: 72px;
+    width: 100%;
+    background: rgba(250, 247, 242, 0.96);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--panel-border);
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    padding: 0 48px;
+    display: flex;
+    align-items: center;
+}
+
+.navbar-inner {
+    width: 100%;
+    max-width: 1680px;
+    margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 48px;
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    transition: all 0.2s ease;
+    gap: 20px;
 }
 
 body.dark-theme .navbar-container {
-    background: rgba(4, 43, 40, 0.92);
+    background: rgba(4, 43, 40, 0.96);
 }
 
 @media (max-width: 1024px) {
@@ -240,7 +259,10 @@ body.dark-theme .navbar-container {
     font-weight: 600;
     color: var(--text-muted);
     text-decoration: none;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid transparent; /* Lock 1px border so sizing never shifts */
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
 .nav-item-link:hover {
