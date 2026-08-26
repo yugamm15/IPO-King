@@ -102,10 +102,10 @@ export default function PreListingExitModal({
 
       if (targetApplications && targetApplications.length > 0) {
         const appIds = targetApplications.map((a) => a.id);
-        await applyPreListingExitToApplications(appIds, exitParams);
+        await applyPreListingExitToApplications(appIds, exitMode, exitParams);
         showToast(`Pre-Listing Exit applied to ${targetApplications.length} application(s)!`, 'success');
       } else if (activeIpo) {
-        await applyPreListingExitToIpo(activeIpo.id, exitParams);
+        await applyPreListingExitToIpo(activeIpo.id, exitMode, exitParams);
         showToast(`Pre-Listing Exit locked for ${activeIpo.ipo_name}!`, 'success');
       }
 

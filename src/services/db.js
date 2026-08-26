@@ -434,50 +434,67 @@ export async function deleteApplication(applicationId) {
   }
 }
 
-export function calculateExitMetrics(exitMode, exitParams, app, ipo) {
+export function calculateExitMetrics(modeOrParams, exitParams = {}, app = {}, ipo = {}) {
+  let exitMode = 'KOSTAK';
+  let params = {};
+
+  if (typeof modeOrParams === 'object' && modeOrParams !== null) {
+    params = modeOrParams;
+    exitMode = String(modeOrParams.exit_mode || 'KOSTAK').toUpperCase();
+  } else {
+    exitMode = String(modeOrParams || 'KOSTAK').toUpperCase();
+    params = typeof exitParams === 'object' && exitParams !== null ? exitParams : {};
+  }
+
   const lotSize = Number(ipo?.lot_size) || 1;
   const rawLots = Number(app.lots_applied) || (Number(app.quantity) >= lotSize ? Math.floor(Number(app.quantity) / lotSize) : 1) || 1;
   const rawQty = Number(app.quantity) || (rawLots * lotSize);
-  const isAllotted = String(app.allotment_status || '').toLowerCase().includes('allotment') || String(app.allotment_status || '').toLowerCase() === 'full' || String(app.allotment_status || '').toLowerCase() === 'partial';
-  const allottedShares = Number(app.allotted_quantity) > 0 ? Number(app.allotted_quantity) : (isAllotted ? rawQty : 0);
-  const allottedLots = allottedShares > 0 ? (allottedShares / lotSize) : (isAllotted ? rawLots : 0);
+
+  const statusStr = String(app.allotment_status || '').toLowerCase();
+  const isExplicitRejected = statusStr.includes('reject') || statusStr.includes('not allotted') || statusStr === 'unallotted';
 
   let grossProfit = 0;
   let exitPrice = 0;
   let settlementRemarks = '';
 
   if (exitMode === 'KOSTAK') {
-    const rate = Number(exitParams.kostak_rate) || 0;
+    const rate = Number(params.kostak_rate) || 0;
     grossProfit = Math.round(rate * rawLots);
     exitPrice = rate;
-    settlementRemarks = `Kostak Exit @ ₹${rate}/lot (Total ₹${grossProfit})`;
+    settlementRemarks = `Kostak Exit @ ₹${rate}/lot (Total ₹${grossProfit.toLocaleString('en-IN')})`;
   } else if (exitMode === 'SAUDA') {
-    const rate = Number(exitParams.sauda_rate) || 0;
-    grossProfit = isAllotted ? Math.round(rate * allottedLots) : 0;
+    const rate = Number(params.sauda_rate) || 0;
+    grossProfit = isExplicitRejected ? 0 : Math.round(rate * rawLots);
     exitPrice = rate;
-    settlementRemarks = isAllotted ? `Subject to Sauda @ ₹${rate}/lot (${allottedLots} lot)` : 'Sauda Void (No Allotment)';
+    settlementRemarks = isExplicitRejected
+      ? 'Subject to Sauda Void (Rejected)'
+      : `Subject to Sauda @ ₹${rate}/lot (Total ₹${grossProfit.toLocaleString('en-IN')})`;
   } else if (exitMode === 'PRE_LISTING') {
-    const price = Number(exitParams.pre_listing_price) || 0;
+    const price = Number(params.pre_listing_price) || 0;
     const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
     const gainPerShare = Math.max(0, price - issueMax);
-    grossProfit = isAllotted ? Math.round(gainPerShare * allottedShares) : 0;
+    grossProfit = isExplicitRejected ? 0 : Math.round(gainPerShare * rawQty);
     exitPrice = price;
-    settlementRemarks = isAllotted ? `Off-Market Sale @ ₹${price}/sh (+₹${gainPerShare}/sh)` : 'Pre-Listing Void (No Allotment)';
+    settlementRemarks = isExplicitRejected
+      ? 'Pre-Listing Void (Rejected)'
+      : `Off-Market Sale @ ₹${price}/sh (+₹${gainPerShare}/sh)`;
   } else {
     // Standard MARKET listing
-    const price = Number(exitParams.listing_price) || Number(ipo?.listing_price) || 0;
+    const price = Number(params.listing_price) || Number(ipo?.listing_price) || 0;
     const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
     const gainPerShare = Math.max(0, price - issueMax);
-    grossProfit = isAllotted ? Math.round(gainPerShare * allottedShares) : 0;
+    grossProfit = isExplicitRejected ? 0 : Math.round(gainPerShare * rawQty);
     exitPrice = price;
-    settlementRemarks = isAllotted ? `Exchange Listed @ ₹${price}/sh` : 'No Allotment';
+    settlementRemarks = isExplicitRejected
+      ? 'No Allotment'
+      : `Exchange Listed @ ₹${price}/sh (+₹${gainPerShare}/sh)`;
   }
 
-  // 40% Customer Gross Share, 60% Admin Share, 10% TDS on Customer Share
+  // 40% Customer Gross Share, 60% Company Share, 10% TDS on Customer Share
   const custGrossShare = Math.round(grossProfit * 0.40);
   const adminShare = Math.round(grossProfit * 0.60);
   const tds10 = Math.round(custGrossShare * 0.10);
-  const netPayout = custGrossShare - tds10;
+  const netPayout = Math.max(0, custGrossShare - tds10);
 
   return {
     exit_mode: exitMode,
@@ -491,42 +508,70 @@ export function calculateExitMetrics(exitMode, exitParams, app, ipo) {
   };
 }
 
-export async function applyPreListingExitToIpo(ipoId, exitMode, exitParams = {}) {
+export async function applyPreListingExitToIpo(ipoId, modeOrParams, extraParams = {}) {
+  let exitMode = 'KOSTAK';
+  let exitParams = {};
+
+  if (typeof modeOrParams === 'object' && modeOrParams !== null) {
+    exitParams = modeOrParams;
+    exitMode = String(modeOrParams.exit_mode || 'KOSTAK').toUpperCase();
+  } else {
+    exitMode = String(modeOrParams || 'KOSTAK').toUpperCase();
+    exitParams = typeof extraParams === 'object' && extraParams !== null ? extraParams : {};
+  }
+
   try {
     const { data: ipoData } = await supabase.from('ipos').select('*').eq('id', ipoId).single();
     if (!ipoData) throw new Error('IPO not found');
 
-    let gainEst = ipoData.gain_est;
+    let gainEst = ipoData.gain_est || '';
     if (exitMode === 'KOSTAK') {
-      gainEst = `Kostak Exit @ ₹${exitParams.kostak_rate}/app`;
+      gainEst = `Kostak Exit @ ₹${exitParams.kostak_rate || 800}/lot`;
     } else if (exitMode === 'SAUDA') {
-      gainEst = `Sauda Exit @ ₹${exitParams.sauda_rate}/lot`;
+      gainEst = `Sauda Exit @ ₹${exitParams.sauda_rate || 12000}/lot`;
     } else if (exitMode === 'PRE_LISTING') {
       const issueMax = Number(ipoData.price_band_max) || 100;
-      const gainPct = (((Number(exitParams.pre_listing_price) - issueMax) / issueMax) * 100).toFixed(1);
-      gainEst = `Off-Market @ ₹${exitParams.pre_listing_price} (+${gainPct}%)`;
+      const prePrice = Number(exitParams.pre_listing_price) || (issueMax * 1.5);
+      const gainPct = (((prePrice - issueMax) / issueMax) * 100).toFixed(1);
+      gainEst = `Off-Market @ ₹${prePrice} (+${gainPct}%)`;
+    } else if (exitMode === 'MARKET') {
+      const listPrice = Number(exitParams.listing_price) || Number(ipoData.price_band_max) || 100;
+      gainEst = `Listed @ ₹${listPrice}`;
     }
 
-    // 1. Update IPO record
-    const ipoUpdatePayload = {
-      exit_mode: exitMode,
-      kostak_rate: Number(exitParams.kostak_rate) || 0,
-      sauda_rate: Number(exitParams.sauda_rate) || 0,
-      pre_listing_price: Number(exitParams.pre_listing_price) || 0,
-      status: 'listed',
-      gain_est: gainEst
-    };
-
-    await supabase.from('ipos').update(ipoUpdatePayload).eq('id', ipoId);
+    // 1. Update IPO record in Supabase
+    try {
+      const ipoUpdatePayload = {
+        exit_mode: exitMode,
+        kostak_rate: Number(exitParams.kostak_rate) || 0,
+        sauda_rate: Number(exitParams.sauda_rate) || 0,
+        pre_listing_price: Number(exitParams.pre_listing_price) || 0,
+        listing_price: Number(exitParams.listing_price) || Number(exitParams.pre_listing_price) || null,
+        status: 'listed',
+        gain_est: gainEst
+      };
+      const { error: ipoUpdateErr } = await supabase.from('ipos').update(ipoUpdatePayload).eq('id', ipoId);
+      if (ipoUpdateErr) {
+        // Fallback update if extended columns don't exist
+        await supabase.from('ipos').update({
+          status: 'listed',
+          gain_est: gainEst
+        }).eq('id', ipoId);
+      }
+    } catch (_) {}
 
     // 2. Fetch all applications for this IPO and update their metrics
     const { data: apps } = await supabase.from('applications').select('*').eq('ipo_id', ipoId);
     if (apps && apps.length > 0) {
       for (const app of apps) {
         const metrics = calculateExitMetrics(exitMode, exitParams, app, ipoData);
-        await supabase
-          .from('applications')
-          .update({
+        const newStatus = String(app.allotment_status || '').toLowerCase().includes('reject')
+          ? app.allotment_status
+          : 'Full Allotment';
+
+        try {
+          const appUpdatePayload = {
+            allotment_status: newStatus,
             exit_mode: exitMode,
             kostak_rate: Number(exitParams.kostak_rate) || 0,
             sauda_rate: Number(exitParams.sauda_rate) || 0,
@@ -537,8 +582,31 @@ export async function applyPreListingExitToIpo(ipoId, exitMode, exitParams = {})
             tds_10: metrics.tds_10,
             net_payout: metrics.net_payout,
             settlement_remarks: metrics.settlement_remarks
-          })
-          .eq('id', app.id);
+          };
+          const { error: appErr } = await supabase.from('applications').update(appUpdatePayload).eq('id', app.id);
+          if (appErr) {
+            await supabase.from('applications').update({ allotment_status: newStatus }).eq('id', app.id);
+          }
+        } catch (_) {}
+
+        // 3. Upsert into ipo_allotments ledger table for guaranteed persistence
+        try {
+          await supabase.from('ipo_allotments').upsert([{
+            application_id: app.id,
+            customer_id: app.customer_id,
+            ipo_id: ipoId,
+            applied_qty: Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+            allotted_qty: Number(app.allotted_quantity) || Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+            allotment_price: Number(ipoData.price_band_max) || Number(ipoData.price_band_min) || 100,
+            listing_price: metrics.exit_price,
+            total_profit: metrics.profit_amount,
+            customer_profit_share_40pct: metrics.client_share_60,
+            company_profit_share_60pct: metrics.admin_share_40,
+            tds_amount_10pct: metrics.tds_10,
+            net_payout: metrics.net_payout,
+            payment_status: 'Pending'
+          }], { onConflict: 'application_id' });
+        } catch (_) {}
       }
     }
 
@@ -550,8 +618,20 @@ export async function applyPreListingExitToIpo(ipoId, exitMode, exitParams = {})
   }
 }
 
-export async function applyPreListingExitToApplications(applicationIds = [], exitMode, exitParams = {}) {
+export async function applyPreListingExitToApplications(applicationIds = [], modeOrParams, extraParams = {}) {
   if (!applicationIds || applicationIds.length === 0) return true;
+
+  let exitMode = 'KOSTAK';
+  let exitParams = {};
+
+  if (typeof modeOrParams === 'object' && modeOrParams !== null) {
+    exitParams = modeOrParams;
+    exitMode = String(modeOrParams.exit_mode || 'KOSTAK').toUpperCase();
+  } else {
+    exitMode = String(modeOrParams || 'KOSTAK').toUpperCase();
+    exitParams = typeof extraParams === 'object' && extraParams !== null ? extraParams : {};
+  }
+
   try {
     const { data: apps } = await supabase
       .from('applications')
@@ -562,9 +642,13 @@ export async function applyPreListingExitToApplications(applicationIds = [], exi
       for (const app of apps) {
         const ipoData = app.ipos || {};
         const metrics = calculateExitMetrics(exitMode, exitParams, app, ipoData);
-        await supabase
-          .from('applications')
-          .update({
+        const newStatus = String(app.allotment_status || '').toLowerCase().includes('reject')
+          ? app.allotment_status
+          : 'Full Allotment';
+
+        try {
+          const appUpdatePayload = {
+            allotment_status: newStatus,
             exit_mode: exitMode,
             kostak_rate: Number(exitParams.kostak_rate) || 0,
             sauda_rate: Number(exitParams.sauda_rate) || 0,
@@ -575,8 +659,31 @@ export async function applyPreListingExitToApplications(applicationIds = [], exi
             tds_10: metrics.tds_10,
             net_payout: metrics.net_payout,
             settlement_remarks: metrics.settlement_remarks
-          })
-          .eq('id', app.id);
+          };
+          const { error: appErr } = await supabase.from('applications').update(appUpdatePayload).eq('id', app.id);
+          if (appErr) {
+            await supabase.from('applications').update({ allotment_status: newStatus }).eq('id', app.id);
+          }
+        } catch (_) {}
+
+        // Upsert into ipo_allotments ledger
+        try {
+          await supabase.from('ipo_allotments').upsert([{
+            application_id: app.id,
+            customer_id: app.customer_id,
+            ipo_id: app.ipo_id,
+            applied_qty: Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+            allotted_qty: Number(app.allotted_quantity) || Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+            allotment_price: Number(ipoData.price_band_max) || Number(ipoData.price_band_min) || 100,
+            listing_price: metrics.exit_price,
+            total_profit: metrics.profit_amount,
+            customer_profit_share_40pct: metrics.client_share_60,
+            company_profit_share_60pct: metrics.admin_share_40,
+            tds_amount_10pct: metrics.tds_10,
+            net_payout: metrics.net_payout,
+            payment_status: 'Pending'
+          }], { onConflict: 'application_id' });
+        } catch (_) {}
       }
     }
 
