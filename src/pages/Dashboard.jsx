@@ -88,7 +88,7 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
   }, [applicationsLedger, currentPage, pageSize]);
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
 
       {/* Hero-11 Welcome Section */}
       <div style={{
@@ -109,14 +109,6 @@ export default function Dashboard({ onOpenExcelModal, onOpenAddIpoModal }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => loadAllData(true)}
-            style={{ padding: '9px 14px' }}
-          >
-            <RefreshCw size={14} className={isLoading ? 'spin' : ''} /> Refresh Ledger
-          </button>
           <button
             type="button"
             className="btn btn-primary"

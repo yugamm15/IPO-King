@@ -101,7 +101,7 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`;
   };
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
 
       {/* Header (Hero-11) */}
       <div style={{ marginBottom: '24px' }}>

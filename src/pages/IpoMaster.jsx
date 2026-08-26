@@ -155,7 +155,7 @@ export default function IpoMaster() {
   const listedCount = ipos.filter(i => String(i.status).toLowerCase() === 'listed').length;
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
 
       {/* Top Banner Header (Hero-11) */}
       <div style={{
@@ -181,16 +181,6 @@ export default function IpoMaster() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => loadIpos(true)}
-            title="Refresh Database Data"
-            style={{ padding: '9px 14px' }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
-          </button>
-
           <button
             type="button"
             className="btn btn-primary"

@@ -262,7 +262,7 @@ export default function Customers({ onOpenExcelModal }) {
   };
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
       {/* Header & Quick Action Bar (Hero-11) */}
       <div style={{
         display: 'flex',

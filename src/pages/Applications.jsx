@@ -301,7 +301,7 @@ export default function Applications({ onOpenExcelModal }) {
   const totalAdminCommission = filteredApps.reduce((sum, a) => sum + (Number(a.admin_share_40) || 0), 0);
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
 
       {/* Top Welcome Header (Hero-11) */}
       <div style={{
@@ -328,15 +328,6 @@ export default function Applications({ onOpenExcelModal }) {
 
         {/* Quick Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => loadData(true)}
-            title="Refresh Applications Data"
-            style={{ padding: '9px 14px' }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
-          </button>
           <button
             type="button"
             className="btn btn-secondary"

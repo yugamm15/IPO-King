@@ -85,7 +85,7 @@ export default function Payments() {
   };
 
   return (
-    <div className="page-content" style={{ padding: '0' }}>
+    <div className="page-content">
 
       {/* Top Header (Hero-11) */}
       <div style={{
@@ -108,18 +108,6 @@ export default function Payments() {
           <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-muted)' }}>
             Bank transfer coordinates, beneficiary payout vouchers, and automated tax withholding ledger.
           </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={loadPayments}
-            title="Refresh Payments Data"
-            style={{ padding: '9px 14px' }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh Ledger
-          </button>
         </div>
       </div>
 
