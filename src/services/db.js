@@ -392,35 +392,52 @@ export async function createApplicationBid(payload) {
   }
 }
 
-export async function createMultipleApplicationBids(customerIds = [], payloadBase = {}) {
-  if (!customerIds || customerIds.length === 0) return [];
+export async function createMultipleApplicationBids(customerIdsOrBids = [], payloadBase = {}) {
+  if (!customerIdsOrBids || customerIdsOrBids.length === 0) return [];
   try {
-    if (payloadBase.ipo_id) {
-      const { data: existingList } = await supabase
-        .from('applications')
-        .select('customer_id')
-        .eq('ipo_id', payloadBase.ipo_id)
-        .in('customer_id', customerIds);
+    let records = [];
 
-      if (existingList && existingList.length > 0) {
-        const existingSet = new Set(existingList.map(e => e.customer_id));
-        const filtered = customerIds.filter(id => !existingSet.has(id));
-        if (filtered.length === 0) {
-          throw new Error('All selected customers have already applied for this IPO offering!');
+    // Case 1: First argument is already an array of bid objects
+    if (typeof customerIdsOrBids[0] === 'object' && customerIdsOrBids[0] !== null) {
+      records = customerIdsOrBids.map((b, idx) => ({
+        customer_id: Number(b.customer_id),
+        ipo_id: Number(b.ipo_id),
+        application_number: b.application_number || ('APP-' + Math.floor(100000 + Math.random() * 900000) + '-' + (idx + 1)),
+        category: b.category || 'RETAIL',
+        quantity: Number(b.quantity) || Number(b.lots_applied) || 1,
+        bid_amount: Number(b.bid_amount) || 15000,
+        allotment_status: b.allotment_status || 'Pending'
+      }));
+    } else {
+      // Case 2: First argument is array of customer IDs
+      let customerIds = customerIdsOrBids;
+      if (payloadBase.ipo_id) {
+        const { data: existingList } = await supabase
+          .from('applications')
+          .select('customer_id')
+          .eq('ipo_id', payloadBase.ipo_id)
+          .in('customer_id', customerIds);
+
+        if (existingList && existingList.length > 0) {
+          const existingSet = new Set(existingList.map(e => e.customer_id));
+          const filtered = customerIds.filter(id => !existingSet.has(id));
+          if (filtered.length === 0) {
+            throw new Error('All selected customers have already applied for this IPO offering!');
+          }
+          customerIds = filtered;
         }
-        customerIds = filtered;
       }
-    }
 
-    const records = customerIds.map((cid, idx) => ({
-      customer_id: cid,
-      ipo_id: payloadBase.ipo_id || null,
-      application_number: payloadBase.application_number || ('APP-' + Math.floor(100000 + Math.random() * 900000) + '-' + (idx + 1)),
-      category: payloadBase.category || 'RETAIL',
-      quantity: Number(payloadBase.quantity) || Number(payloadBase.lots_applied) || 1,
-      bid_amount: Number(payloadBase.bid_amount) || 15000,
-      allotment_status: payloadBase.allotment_status || 'Pending'
-    }));
+      records = customerIds.map((cid, idx) => ({
+        customer_id: Number(cid),
+        ipo_id: Number(payloadBase.ipo_id) || null,
+        application_number: payloadBase.application_number || ('APP-' + Math.floor(100000 + Math.random() * 900000) + '-' + (idx + 1)),
+        category: payloadBase.category || 'RETAIL',
+        quantity: Number(payloadBase.quantity) || Number(payloadBase.lots_applied) || 1,
+        bid_amount: Number(payloadBase.bid_amount) || 15000,
+        allotment_status: payloadBase.allotment_status || 'Pending'
+      }));
+    }
 
     const { data, error } = await supabase
       .from('applications')
