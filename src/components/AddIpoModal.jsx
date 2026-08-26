@@ -8,7 +8,7 @@ import {
   Save,
   Zap
 } from 'lucide-react';
-import { supabase } from '../services/db.js';
+import { supabase, invalidateDbCache } from '../services/db.js';
 
 export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = null }) {
   const [ipoName, setIpoName] = useState('');
@@ -67,17 +67,21 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
     setIsSubmitting(true);
     setErrorMsg('');
 
+    // Format gain_est
+    let formattedGainEst = gainEst ? gainEst.trim() : '';
+    if (formattedGainEst && !formattedGainEst.startsWith('+') && !formattedGainEst.startsWith('Listed')) {
+      formattedGainEst = `+₹${formattedGainEst}/sh Est.`;
+    }
+
     const payload = {
       ipo_name: ipoName.trim(),
-      symbol: symbol.trim().toUpperCase() || null,
-      company_name: companyName.trim() || null,
-      ipo_type: ipoType || 'Mainboard',
+      symbol: symbol.trim().toUpperCase() || ipoName.trim().toUpperCase(),
+      company_name: companyName.trim() || ipoName.trim(),
       price_band_min: minPriceNum,
       price_band_max: maxPriceNum,
       lot_size: lotSizeNum,
-      issue_size: issueSize.trim() || null,
       status: status || 'open',
-      gain_est: gainEst.trim() || null
+      gain_est: formattedGainEst || null
     };
 
     try {
@@ -101,6 +105,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
         resultData = data?.[0] || payload;
       }
 
+      invalidateDbCache();
       if (onSuccess) onSuccess(resultData);
       onClose();
     } catch (err) {
