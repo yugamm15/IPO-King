@@ -656,6 +656,7 @@ export default function Applications({ showConfirm }) {
                 const panVal = row.pan || row.pan_number || '—';
                 const ipoVal = row.ipo_name || row.ipo_applied || 'IPO Offering';
                 const lotsVal = row.lots_applied || 1;
+                const qtyVal = row.quantity || (lotsVal * (row.lot_size || 50));
                 const clientProfit = Number(row.client_share_60) || 0;
                 const tdsAmt = clientProfit > 0 ? (Number(row.tds_10) || 0) : 0;
                 const exitModeStr = row.exit_mode || 'MARKET';
