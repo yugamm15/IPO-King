@@ -1,20 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Layers,
-  Tag,
   Building2,
-  Coins,
   Calendar,
   TrendingUp,
-  ExternalLink,
-  PlusCircle,
-  Save,
   X,
   AlertTriangle,
-  Calculator,
   CheckCircle2,
-  Clock,
-  FileText,
+  Save,
   Zap,
   Globe
 } from 'lucide-react';
@@ -80,16 +73,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
 
   if (!isOpen) return null;
 
-  const formatDateString = (dStr) => {
-    if (!dStr) return '';
-    try {
-      const d = new Date(dStr);
-      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    } catch (_) {
-      return dStr;
-    }
-  };
-
   const minPriceNum = Number(priceMin) || 0;
   const maxPriceNum = Number(priceMax) || minPriceNum;
   const lotSizeNum = Number(lotSize) || 1;
@@ -105,46 +88,44 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
     setIsSubmitting(true);
     setErrorMsg('');
 
-    let datesFormatted = 'Open Now';
-    if (startDate && endDate) {
-      datesFormatted = `${formatDateString(startDate)} - ${formatDateString(endDate)}`;
-    } else if (startDate) {
-      datesFormatted = `From ${formatDateString(startDate)}`;
-    }
-
-    let finalGainEst = gainEst.trim() || '+₹150/sh Est.';
-    if (status === 'listed' && listingPrice && Number(listingPrice) > 0) {
-      const price = Number(listingPrice);
-      const issueMax = maxPriceNum || minPriceNum || 100;
-      const gainPct = (((price - issueMax) / issueMax) * 100).toFixed(1);
-      finalGainEst = `Listed @ ₹${price} (${gainPct >= 0 ? '+' : ''}${gainPct}%)`;
-    }
-
     const payload = {
       ipo_name: ipoName.trim(),
-      symbol: symbol.trim() || 'NSE / BSE',
-      company_name: companyName.trim() || ipoName.trim(),
+      symbol: symbol.trim().toUpperCase() || null,
+      company_name: companyName.trim() || null,
+      ipo_type: ipoType || 'Mainboard',
       price_band_min: minPriceNum,
       price_band_max: maxPriceNum,
       lot_size: lotSizeNum,
-      open_date: startDate || null,
-      close_date: endDate || null,
-      subscription_open_date: datesFormatted,
+      issue_size: issueSize.trim() || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      allotment_date: allotmentDate || null,
       listing_date: listingDate || null,
+      listing_price: listingPrice ? Number(listingPrice) : null,
       status: status || 'open',
-      gain_est: finalGainEst
+      gain_est: gainEst.trim() || null,
+      allotment_url: allotmentUrl.trim() || null
     };
 
     try {
       let resultData;
-      if (ipoToEdit && ipoToEdit.id) {
-        const { data, error } = await supabase.from('ipos').update(payload).eq('id', ipoToEdit.id).select();
+      if (ipoToEdit?.id) {
+        const { data, error } = await supabase
+          .from('ipos')
+          .update(payload)
+          .eq('id', ipoToEdit.id)
+          .select();
+
         if (error) throw error;
-        resultData = data;
+        resultData = data?.[0] || payload;
       } else {
-        const { data, error } = await supabase.from('ipos').insert([payload]).select();
+        const { data, error } = await supabase
+          .from('ipos')
+          .insert([payload])
+          .select();
+
         if (error) throw error;
-        resultData = data;
+        resultData = data?.[0] || payload;
       }
 
       if (onSuccess) onSuccess(resultData);
@@ -158,93 +139,89 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 99999, padding: '20px' }}>
+    <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-content glass-panel"
+        className="modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{
           maxWidth: '920px',
           width: '92vw',
           maxHeight: '90vh',
-          borderRadius: '20px',
+          borderRadius: '28px',
           padding: 0,
           overflow: 'hidden',
-          boxShadow: '0 25px 70px rgba(15, 23, 42, 0.28)',
-          border: '1px solid var(--panel-border)',
-          background: 'var(--panel-bg)',
-          position: 'relative'
+          background: 'var(--panel-bg)'
         }}
       >
-        {/* Modal Header */}
+        {/* Modal Header (Hero-11) */}
         <div style={{
-          padding: '20px 24px',
+          padding: '20px 28px',
           borderBottom: '1px solid var(--panel-border)',
-          position: 'relative',
           display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'center',
-          gap: '12px'
+          background: 'var(--panel-bg)'
         }}>
-          {/* Centered Logo Box */}
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
-            color: '#FFFFFF',
-            display: 'grid',
-            placeItems: 'center',
-            flexShrink: 0,
-            padding: 0,
-            boxSizing: 'border-box'
-          }}>
-            <Layers size={22} style={{ display: 'block', margin: '0 auto' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'rgba(4, 47, 46, 0.08)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Layers size={22} />
+            </div>
+
+            <div>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+                {ipoToEdit ? 'Edit IPO Parameters' : 'New IPO Offering'}
+              </h2>
+              <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                Configure NSE/BSE offering parameters, price band, and registrar link.
+              </p>
+            </div>
           </div>
 
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)' }}>
-            {ipoToEdit ? 'Edit IPO' : 'New IPO'}
-          </h2>
-
-          {/* Absolute Top-Right Close Button */}
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close modal"
             style={{
-              position: 'absolute',
-              right: '16px',
-              top: '16px',
-              background: 'var(--table-header-bg)',
-              border: '1px solid var(--panel-border)',
+              background: 'rgba(4, 47, 46, 0.05)',
+              border: 'none',
               borderRadius: '50%',
               width: '32px',
               height: '32px',
-              display: 'grid',
-              placeItems: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
-              color: 'var(--text-muted)',
-              padding: 0,
-              boxSizing: 'border-box'
+              color: 'var(--text-muted)'
             }}
           >
-            <X size={16} style={{ display: 'block', margin: '0 auto' }} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Form Content */}
-        <form onSubmit={handleSubmit}>
-          <div style={{ padding: '24px', maxHeight: 'calc(90vh - 150px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
             {errorMsg && (
               <div style={{
                 padding: '12px 16px',
-                borderRadius: '10px',
-                background: 'rgba(220, 38, 38, 0.1)',
-                border: '1px solid rgba(220, 38, 38, 0.3)',
-                color: 'var(--danger)',
+                borderRadius: '12px',
+                background: 'var(--danger-light)',
+                border: '1px solid rgba(220, 38, 38, 0.2)',
+                color: 'var(--danger-text)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                fontSize: '0.88rem'
+                fontSize: '13px',
+                fontWeight: 600
               }}>
                 <AlertTriangle size={18} />
                 <span>{errorMsg}</span>
@@ -252,285 +229,212 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
             )}
 
             {/* SECTION 1: Company & Exchange Identification */}
-            <div className="glass-panel" style={{ padding: '18px 20px', borderRadius: '16px', background: 'var(--table-header-bg)' }}>
-              <h3 style={{ margin: '0 0 14px', fontSize: '0.94rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Building2 size={18} style={{ color: 'var(--primary)' }} />
+            <div style={{
+              background: 'rgba(4, 47, 46, 0.02)',
+              border: '1px solid var(--panel-border)',
+              borderRadius: '20px',
+              padding: '20px'
+            }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Building2 size={16} />
                 1. Company & Stock Exchange Identification
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '14px', marginBottom: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    IPO Title / Name *
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <Tag size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-                    <input
-                      type="text"
-                      className="input-field"
-                      placeholder="e.g. Swiggy Ltd IPO"
-                      value={ipoName}
-                      onChange={(e) => setIpoName(e.target.value)}
-                      style={{ width: '100%', paddingLeft: '36px', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                      required
-                    />
-                  </div>
+                  <label className="input-label">IPO Name *</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. Premier Energies Ltd"
+                    value={ipoName}
+                    onChange={(e) => setIpoName(e.target.value)}
+                    required
+                  />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Exchange Ticker / Symbol *
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <FileText size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-                    <input
-                      type="text"
-                      className="input-field"
-                      placeholder="e.g. NSE: SWIGGY | BSE: 544200"
-                      value={symbol}
-                      onChange={(e) => setSymbol(e.target.value)}
-                      style={{ width: '100%', paddingLeft: '36px', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                      required
-                    />
-                  </div>
+                  <label className="input-label">Stock Symbol / Ticker</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. PREMIERENE"
+                    value={symbol}
+                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                    style={{ textTransform: 'uppercase' }}
+                  />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Board Classification *
-                  </label>
+                  <label className="input-label">Exchange Board / Series</label>
                   <select
                     className="input-field"
                     value={ipoType}
                     onChange={(e) => setIpoType(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 500, borderRadius: '8px' }}
-                    required
                   >
-                    <option value="Mainboard">Mainboard IPO (SEBI)</option>
-                    <option value="SME">SME Board IPO</option>
+                    <option value="Mainboard">Mainboard (NSE / BSE)</option>
+                    <option value="SME">SME Board (NSE Emerge / BSE SME)</option>
                   </select>
                 </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Registered Corporate Name *
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. Swiggy India Private Limited"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                    required
-                  />
-                </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Current Lifecycle Status *
-                  </label>
+                  <label className="input-label">Offering Status</label>
                   <select
                     className="input-field"
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 500, borderRadius: '8px' }}
-                    required
                   >
-                    <option value="open">🟢 Open (Active Bidding)</option>
-                    <option value="upcoming">🔵 Upcoming Bidding</option>
-                    <option value="closed">🟠 Closed / Allotment Pending</option>
-                    <option value="listed">🟣 Listed on Stock Exchange</option>
+                    <option value="open">Open for Bidding</option>
+                    <option value="upcoming">Upcoming Pipeline</option>
+                    <option value="closed">Closed / Allotment Pending</option>
+                    <option value="listed">Listed on Stock Exchanges</option>
                   </select>
                 </div>
               </div>
             </div>
 
-            {/* SECTION 2: Pricing & Lots */}
-            <div className="glass-panel" style={{ padding: '18px 20px', borderRadius: '16px', background: 'var(--table-header-bg)' }}>
-              <h3 style={{ margin: '0 0 14px', fontSize: '0.94rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Coins size={18} style={{ color: 'var(--success)' }} />
-                2. Price Band & Retail Capital Engine
+            {/* SECTION 2: Price Band & Retail Lot Economics */}
+            <div style={{
+              background: 'rgba(4, 47, 46, 0.02)',
+              border: '1px solid var(--panel-border)',
+              borderRadius: '20px',
+              padding: '20px'
+            }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <TrendingUp size={16} />
+                2. Price Band & Retail Lot Economics
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.5fr', gap: '14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Price Min (₹) *
-                  </label>
+                  <label className="input-label">Price Floor (₹)</label>
                   <input
                     type="number"
                     className="input-field"
-                    placeholder="100"
                     value={priceMin}
-                    onChange={(e) => setPriceMin(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
+                    onChange={(e) => setPriceMin(Number(e.target.value))}
                     required
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Price Max (₹) *
-                  </label>
+                  <label className="input-label">Price Cap (₹)</label>
                   <input
                     type="number"
                     className="input-field"
-                    placeholder="120"
                     value={priceMax}
-                    onChange={(e) => setPriceMax(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
+                    onChange={(e) => setPriceMax(Number(e.target.value))}
                     required
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Lot Size (Shares) *
-                  </label>
+                  <label className="input-label">Lot Size (Shares)</label>
                   <input
                     type="number"
                     className="input-field"
-                    placeholder="50"
                     value={lotSize}
-                    onChange={(e) => setLotSize(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
+                    onChange={(e) => setLotSize(Number(e.target.value))}
                     required
                   />
                 </div>
 
-                <div style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: 'rgba(37, 99, 235, 0.08)',
-                  border: '1px solid rgba(37, 99, 235, 0.2)',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}>
-                  <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--primary)', fontWeight: 600 }}>
-                    Auto Computed 1 Lot Capital
-                  </span>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>
-                    ₹ {minRetailInvestment.toLocaleString('en-IN')}
-                  </div>
+                <div>
+                  <label className="input-label">Min Retail Investment</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={`₹ ${minRetailInvestment.toLocaleString('en-IN')}`}
+                    readOnly
+                    style={{ background: 'rgba(4, 47, 46, 0.05)', fontWeight: 800, color: 'var(--primary)' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="input-label">Grey Market Premium (GMP)</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. +₹185 (41%)"
+                    value={gainEst}
+                    onChange={(e) => setGainEst(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="input-label">Issue Size (₹ Cr)</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. ₹2,830 Cr"
+                    value={issueSize}
+                    onChange={(e) => setIssueSize(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* SECTION 3: Schedules */}
-            <div className="glass-panel" style={{ padding: '18px 20px', borderRadius: '16px', background: 'var(--table-header-bg)' }}>
-              <h3 style={{ margin: '0 0 14px', fontSize: '0.94rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={18} style={{ color: 'var(--purple)' }} />
-                3. Timeline Schedule
+            {/* SECTION 3: Key Schedule & Dates */}
+            <div style={{
+              background: 'rgba(4, 47, 46, 0.02)',
+              border: '1px solid var(--panel-border)',
+              borderRadius: '20px',
+              padding: '20px'
+            }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} />
+                3. Key Schedule & Dates
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Subscription Start *
-                  </label>
+                  <label className="input-label">Bid Open Date</label>
                   <input
                     type="date"
                     className="input-field"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                    required
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Subscription Close *
-                  </label>
+                  <label className="input-label">Bid Close Date</label>
                   <input
                     type="date"
                     className="input-field"
                     value={endDate}
-                    min={startDate || undefined}
                     onChange={(e) => setEndDate(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                    required
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Allotment Date
-                  </label>
+                  <label className="input-label">Allotment Date</label>
                   <input
                     type="date"
                     className="input-field"
                     value={allotmentDate}
                     onChange={(e) => setAllotmentDate(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Listing Date
-                  </label>
+                  <label className="input-label">Listing Date</label>
                   <input
                     type="date"
                     className="input-field"
                     value={listingDate}
                     onChange={(e) => setListingDate(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* SECTION 4: GMP & Allotment Checker */}
-            <div className="glass-panel" style={{ padding: '18px 20px', borderRadius: '16px', background: 'var(--table-header-bg)' }}>
-              <h3 style={{ margin: '0 0 14px', fontSize: '0.94rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TrendingUp size={18} style={{ color: 'var(--warning)' }} />
-                4. GMP & Registrar Checker
-              </h3>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    GMP / Gain Estimate
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. +₹180/sh Est."
-                    value={gainEst}
-                    onChange={(e) => setGainEst(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
                   />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Listing Price (₹)
-                  </label>
-                  <input
-                    type="number"
-                    className="input-field"
-                    placeholder="e.g. 565"
-                    value={listingPrice}
-                    onChange={(e) => setListingPrice(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    Registrar Checker URL
-                  </label>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="input-label">Registrar Allotment URL</label>
                   <input
                     type="text"
                     className="input-field"
                     placeholder="e.g. https://ris.kfintech.com/ipostatus/"
                     value={allotmentUrl}
                     onChange={(e) => setAllotmentUrl(e.target.value)}
-                    style={{ width: '100%', height: '40px', fontSize: '0.88rem', fontWeight: 400, borderRadius: '8px' }}
                   />
                 </div>
               </div>
@@ -540,11 +444,11 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
 
           {/* Modal Footer Controls Bar */}
           <div style={{
-            padding: '16px 24px',
+            padding: '16px 28px',
             background: 'var(--panel-bg)',
             borderTop: '1px solid var(--panel-border)',
             display: 'flex',
-            justify: 'flex-end',
+            justifyContent: 'flex-end',
             gap: '12px'
           }}>
             <button
@@ -552,7 +456,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
               className="btn btn-secondary"
               onClick={onClose}
               disabled={isSubmitting}
-              style={{ padding: '10px 20px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 500 }}
+              style={{ padding: '10px 20px', fontSize: '14px' }}
             >
               Cancel
             </button>
@@ -561,7 +465,7 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
               type="submit"
               className="btn btn-primary"
               disabled={isSubmitting}
-              style={{ padding: '10px 24px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600 }}
+              style={{ padding: '10px 24px', fontSize: '14px' }}
             >
               {ipoToEdit ? <Save size={16} /> : <Zap size={16} />}
               <span>{isSubmitting ? 'Publishing...' : ipoToEdit ? 'Save Changes' : 'Publish IPO'}</span>

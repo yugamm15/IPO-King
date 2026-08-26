@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileSpreadsheet, User, CreditCard, Building, Layers, CheckCircle2, X, AlertCircle, UploadCloud, Download, Search, CheckSquare, Square } from 'lucide-react';
+import {
+  FileSpreadsheet,
+  User,
+  CreditCard,
+  Building,
+  Layers,
+  CheckCircle2,
+  X,
+  AlertCircle,
+  UploadCloud,
+  Download,
+  Search,
+  CheckSquare,
+  Square,
+  Users
+} from 'lucide-react';
 import { supabase, createApplicationBid, createMultipleApplicationBids, fetchCustomersShortList, bulkInsertApplications } from '../services/db.js';
 import { useToast } from '../context/ToastContext.jsx';
 
@@ -98,8 +113,9 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
       setErrorMsg('Please select at least one customer from the list.');
       return;
     }
+
     if (!ipoId) {
-      setErrorMsg('Please select an IPO.');
+      setErrorMsg('Please select a target IPO Offering.');
       return;
     }
 
@@ -109,143 +125,149 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
       const lotSize = Number(activeIpo?.lot_size) || 1;
       const totalQty = lots * lotSize;
 
-      const payloadBase = {
+      const bidPayloads = selectedCustomerIds.map(customerId => ({
+        customer_id: customerId,
         ipo_id: ipoId,
         category: category,
         quantity: totalQty,
-        lots_applied: lots,
-        bid_amount: Number(bidAmount) || 15000,
-        allotment_status: allotmentStatus
-      };
+        bid_amount: Number(bidAmount),
+        allotment_status: allotmentStatus || 'Pending'
+      }));
 
-      if (selectedCustomerIds.length === 1) {
-        await createApplicationBid({
-          ...payloadBase,
-          customer_id: selectedCustomerIds[0]
-        });
-        showToast('Application bid submitted successfully!', 'success');
-      } else {
-        await createMultipleApplicationBids(selectedCustomerIds, payloadBase);
-        showToast(`Successfully created ${selectedCustomerIds.length} application bids!`, 'success');
-      }
-
+      await createMultipleApplicationBids(bidPayloads);
+      showToast(`Successfully registered ${bidPayloads.length} IPO bid(s)!`, 'success');
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
-      console.error('Error creating bid:', err);
-      const msg = err.message || 'Failed to submit application bid.';
-      setErrorMsg(msg);
-      showToast(msg, 'error');
+      console.error('Error creating applications:', err);
+      setErrorMsg(err.message || 'Failed to submit application bids.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Download pre-filled template with DB customers
+  // Bulk Template Download
   const handleDownloadTemplate = () => {
-    if (!customers || customers.length === 0) {
-      showToast('No customers found in database to export template.', 'warning');
-      return;
-    }
+    const activeIpo = ipos.find(i => String(i.id) === String(ipoId));
+    const ipoTitle = activeIpo ? activeIpo.ipo_name : 'Selected_IPO';
 
-    const headers = ['Customer Name', 'PAN Number', 'Bank Account', 'DPID', 'Mobile Number', 'Lots Applied', 'Application Status'];
+    const headers = [
+      'Customer No',
+      'Customer Name',
+      'PAN Number',
+      'DPID',
+      'Bank Name',
+      'Bank Account No',
+      'Mobile Number',
+      'Target IPO Name',
+      'Category (RETAIL/HNI)',
+      'Lots Applied',
+      'Bid Amount (INR)',
+      'Application Status (Applied/Not Applied)'
+    ];
+
     const rows = customers.map(c => [
-      `"${c.full_name || c.name || ''}"`,
-      `"${c.pan_number || c.pan || ''}"`,
-      `"${c.bank_account_no || c.bank_account || ''}"`,
-      `"${c.dpid || ''}"`,
-      `"${c.mobile_number || c.phone || ''}"`,
+      c.customer_no || '',
+      `"${(c.full_name || c.name || '').replace(/"/g, '""')}"`,
+      c.pan_number || '',
+      c.dpid || '',
+      `"${(c.bank_name || '').replace(/"/g, '""')}"`,
+      c.bank_account_no || '',
+      c.mobile_number || '',
+      `"${ipoTitle}"`,
+      'RETAIL',
       '1',
+      bidAmount,
       'Applied'
     ]);
 
-    const csvString = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `IPO_Customers_Template.csv`);
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `IPO_Application_Template_${ipoTitle.replace(/\s+/g, '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    showToast(`Template downloaded with ${customers.length} database customer records!`, 'success');
+    showToast('Customer Application Template downloaded!', 'success');
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setImportStatus(`File selected: "${file.name}". Ready to process bulk bids.`);
-    }
-  };
-
-  const parseCsvText = (text) => {
-    const lines = text.split(/\r\n|\n/).filter(line => line.trim());
-    if (lines.length <= 1) return [];
-    
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
-    const rows = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      if (values.length === 0 || !values[0]) continue;
-
-      const obj = {};
-      headers.forEach((h, idx) => {
-        const val = values[idx] || '';
-        if (h.includes('NAME')) obj.name = val;
-        else if (h.includes('PAN')) obj.pan = val;
-        else if (h.includes('BANK')) obj.bank_account_no = val;
-        else if (h.includes('MOBILE') || h.includes('PHONE')) obj.mobile_number = val;
-        else if (h.includes('QTY') || h.includes('LOT')) obj.quantity = val;
-        else if (h.includes('AMOUNT')) obj.bid_amount = val;
-        else if (h.includes('STATUS')) obj.allotment_status = val;
-      });
-
-      if (!obj.name && values[0]) obj.name = values[0];
-      if (!obj.pan && values[1]) obj.pan = values[1];
-      if (!obj.allotment_status && values[6]) obj.allotment_status = values[6];
-
-      rows.push(obj);
-    }
-    return rows;
+    const file = e.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setImportStatus(`Selected: ${file.name}`);
   };
 
   const handleBulkImportSubmit = async () => {
     if (!selectedFile) {
-      showToast('Please select an Excel (.xlsx, .csv) file to import.', 'warning');
-      return;
-    }
-    if (!ipoId) {
-      showToast('Please select a target IPO for bulk upload.', 'warning');
+      showToast('Please select a CSV or Excel file first.', 'warning');
       return;
     }
 
-    setImportStatus('Processing file and syncing records into database...');
+    if (!ipoId) {
+      showToast('Please select the Target IPO for this bulk import.', 'warning');
+      return;
+    }
+
     setIsSubmitting(true);
-    
+    setImportStatus('Parsing and importing customer applications...');
+
     try {
       const reader = new FileReader();
-      reader.onload = async (e) => {
-        const text = e.target.result;
-        const parsedRows = parseCsvText(text);
-        
-        let result = { count: 0 };
-        if (parsedRows.length > 0) {
-          result = await bulkInsertApplications(parsedRows, ipoId);
-        } else {
-          result = await bulkInsertApplications([{
-            name: selectedFile.name.replace(/\.[^/.]+$/, ''),
-            pan: 'IMPORT' + Math.floor(1000 + Math.random() * 9000) + 'X',
-            quantity: 1,
-            bid_amount: 15000,
-            allotment_status: 'Applied'
-          }], ipoId);
+      reader.onload = async (event) => {
+        const text = event.target.result;
+        const lines = text.split(/\r\n|\n/).filter(line => line.trim().length > 0);
+
+        if (lines.length <= 1) {
+          setImportStatus('❌ File is empty or invalid.');
+          setIsSubmitting(false);
+          return;
         }
 
-        setImportStatus(`✅ Import complete! Successfully processed & saved ${result.count} records for target IPO.`);
-        showToast('Bulk bids imported successfully!', 'success');
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+        const dataRows = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const rawCols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+          const cols = rawCols.map(c => (c || '').trim().replace(/^["']|["']$/g, ''));
+          if (cols.length === 0 || !cols.some(c => c)) continue;
+
+          const rowObj = {};
+          headers.forEach((h, idx) => {
+            rowObj[h] = cols[idx] || '';
+          });
+
+          const pan = rowObj['pan number'] || rowObj['pan'] || rowObj['pan_number'] || '';
+          const name = rowObj['customer name'] || rowObj['name'] || rowObj['full_name'] || '';
+          const status = rowObj['application status (applied/not applied)'] || rowObj['status'] || rowObj['application status'] || 'Applied';
+          const lotsApplied = Number(rowObj['lots applied'] || rowObj['lots'] || rowObj['quantity']) || 1;
+          const bidAmt = Number(rowObj['bid amount (inr)'] || rowObj['bid amount'] || rowObj['amount']) || 15000;
+
+          if (String(status).toLowerCase().includes('not applied') || String(status).toLowerCase() === 'no') {
+            continue;
+          }
+
+          dataRows.push({
+            pan_number: pan,
+            full_name: name,
+            lots_applied: lotsApplied,
+            bid_amount: bidAmt,
+            allotment_status: 'Pending',
+            ipo_id: ipoId
+          });
+        }
+
+        if (dataRows.length === 0) {
+          setImportStatus('❌ No "Applied" customer records found in file.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const res = await bulkInsertApplications(dataRows, ipoId);
+        setImportStatus(`✅ Successfully imported ${res.count} applications!`);
+        showToast(`Imported ${res.count} applications for IPO!`, 'success');
+
         setTimeout(() => {
           setSelectedFile(null);
           setImportStatus('');
@@ -266,91 +288,145 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-content glass-panel"
+        className="modal-content"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '680px', width: '100%', padding: '24px', borderRadius: '20px' }}
+        style={{
+          maxWidth: '720px',
+          width: '92vw',
+          maxHeight: '90vh',
+          borderRadius: '28px',
+          padding: 0,
+          overflow: 'hidden',
+          background: 'var(--panel-bg)'
+        }}
       >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(37, 99, 235, 0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* Header (Hero-11) */}
+        <div style={{
+          padding: '20px 28px',
+          borderBottom: '1px solid var(--panel-border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'var(--panel-bg)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'rgba(4, 47, 46, 0.08)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
               <FileSpreadsheet size={22} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Apply IPO Application</h3>
-              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Multi-Customer Application &amp; Bulk Pre-Filled Excel Import
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+                Apply IPO Application
+              </h3>
+              <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                Multi-Customer Bid Dispatcher &amp; Pre-Filled Excel Stream
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="btn-icon" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-            <X size={20} />
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'rgba(4, 47, 46, 0.05)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-muted)'
+            }}
+          >
+            <X size={16} />
           </button>
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: 'var(--card-bg, rgba(255, 255, 255, 0.05))', padding: '4px', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('single')}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'single' ? 'var(--primary)' : 'transparent',
-              color: activeTab === 'single' ? '#FFFFFF' : 'var(--text-muted)',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            👥 Select Customers &amp; Apply
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('bulk')}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'bulk' ? 'var(--primary)' : 'transparent',
-              color: activeTab === 'bulk' ? '#FFFFFF' : 'var(--text-muted)',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
-            }}
-          >
-            <UploadCloud size={16} /> Bulk Excel Upload Bids
-          </button>
+        <div style={{ padding: '16px 28px 0 28px' }}>
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+            background: 'rgba(4, 47, 46, 0.04)',
+            padding: '4px',
+            borderRadius: '14px',
+            border: '1px solid var(--panel-border)'
+          }}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('single')}
+              className={`btn ${activeTab === 'single' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                border: 'none',
+                boxShadow: activeTab === 'single' ? '0 2px 8px rgba(4, 47, 46, 0.15)' : 'none'
+              }}
+            >
+              👥 Select Customers &amp; Apply
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('bulk')}
+              className={`btn ${activeTab === 'bulk' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                border: 'none',
+                boxShadow: activeTab === 'bulk' ? '0 2px 8px rgba(4, 47, 46, 0.15)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <UploadCloud size={15} /> Bulk Excel Upload
+            </button>
+          </div>
         </div>
 
         {errorMsg && (
-          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.85rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AlertCircle size={16} /> {errorMsg}
+          <div style={{
+            margin: '16px 28px 0 28px',
+            background: 'var(--danger-light)',
+            border: '1px solid rgba(220, 38, 38, 0.2)',
+            color: 'var(--danger-text)',
+            padding: '10px 14px',
+            borderRadius: '12px',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertCircle size={16} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
         {/* TAB 1: MULTI-CUSTOMER APPLICATION */}
         {activeTab === 'single' ? (
-          <form onSubmit={handleSubmitSingle}>
+          <form onSubmit={handleSubmitSingle} style={{ padding: '20px 28px 24px 28px', overflowY: 'auto', flex: 1 }}>
             {/* 1. Target IPO */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                Select Target IPO Offering *
-              </label>
+              <label className="input-label">Select Target IPO Offering *</label>
               <select
                 className="input-field"
                 value={ipoId}
                 onChange={(e) => setIpoId(e.target.value)}
-                style={{ width: '100%', height: '42px', borderRadius: '10px', fontWeight: 700 }}
+                style={{ fontWeight: 700 }}
                 required
               >
                 <option value="">-- Choose IPO --</option>
@@ -362,47 +438,95 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
               </select>
             </div>
 
-            {/* 2. Multi-Customer Selection List */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  Select Customers to Apply ({selectedCustomerIds.length} Selected) *
+            {/* 2. Application Parameters Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+              <div>
+                <label className="input-label">Category</label>
+                <select
+                  className="input-field"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="RETAIL">Retail (IND)</option>
+                  <option value="sHNI">sHNI (2-10L)</option>
+                  <option value="bHNI">bHNI (&gt;10L)</option>
+                  <option value="EMPLOYEE">Employee</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="input-label">Lots Applied</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="input-field"
+                  value={lots}
+                  onChange={(e) => setLots(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  required
+                  style={{ fontWeight: 700 }}
+                />
+              </div>
+
+              <div>
+                <label className="input-label">Total Bid (₹)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  value={bidAmount}
+                  onChange={(e) => setBidAmount(Number(e.target.value))}
+                  required
+                  style={{ fontWeight: 700 }}
+                />
+              </div>
+            </div>
+
+            {/* 3. Customer Selection Multi-Picker */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label className="input-label" style={{ margin: 0 }}>
+                  Select Customers ({selectedCustomerIds.length} Selected)
                 </label>
                 <button
                   type="button"
                   onClick={toggleSelectAll}
-                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--brand-accent)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  {selectedCustomerIds.length === filteredCustomers.length ? 'Deselect All' : 'Select All'}
+                  {selectedCustomerIds.length === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All Filtered'}
                 </button>
               </div>
 
-              {/* Search Bar inside Customer Picker */}
-              <div className="input-wrapper" style={{ marginBottom: '8px' }}>
-                <Search size={14} style={{ position: 'absolute', left: '12px', color: 'var(--text-muted)' }} />
+              {/* Search input for customer picker */}
+              <div style={{ position: 'relative', marginBottom: '10px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
                 <input
                   type="text"
-                  placeholder="Search customer name or PAN..."
+                  placeholder="Search customer by name, PAN, bank..."
+                  className="input-field"
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)}
-                  style={{ width: '100%', paddingLeft: '34px', height: '36px', fontSize: '0.84rem' }}
+                  style={{ paddingLeft: '32px', height: '36px', fontSize: '13px' }}
                 />
               </div>
 
-              {/* Customer Checklist Scroll Container */}
+              {/* List of customer cards */}
               <div style={{
                 maxHeight: '180px',
                 overflowY: 'auto',
                 border: '1px solid var(--panel-border)',
-                borderRadius: '12px',
-                padding: '8px 12px',
-                background: 'var(--card-bg, rgba(255, 255, 255, 0.04))'
+                borderRadius: '14px',
+                background: 'rgba(4, 47, 46, 0.02)',
+                padding: '6px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
               }}>
                 {loadingCustomers ? (
-                  <div style={{ padding: '12px', textAlign: 'center', fontSize: '0.84rem', color: 'var(--text-muted)' }}>Loading customers...</div>
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                    Loading customer roster...
+                  </div>
                 ) : filteredCustomers.length > 0 ? (
-                  filteredCustomers.map((c) => {
-                    const isChecked = selectedCustomerIds.includes(c.id);
+                  filteredCustomers.map(c => {
+                    const isSelected = selectedCustomerIds.includes(c.id);
                     return (
                       <div
                         key={c.id}
@@ -411,106 +535,72 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '8px 10px',
-                          borderRadius: '8px',
+                          padding: '8px 12px',
+                          borderRadius: '10px',
+                          background: isSelected ? 'rgba(4, 47, 46, 0.08)' : 'var(--panel-bg)',
+                          border: '1px solid',
+                          borderColor: isSelected ? 'var(--primary)' : 'var(--panel-border)',
                           cursor: 'pointer',
-                          marginBottom: '4px',
-                          background: isChecked ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
-                          border: isChecked ? '1px solid rgba(37, 99, 235, 0.3)' : '1px solid transparent'
+                          transition: 'all 0.15s ease'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {isChecked ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} /> : <Square size={16} style={{ color: 'var(--text-muted)' }} />}
+                          {isSelected ? (
+                            <CheckSquare size={16} style={{ color: 'var(--primary)' }} />
+                          ) : (
+                            <Square size={16} style={{ color: 'var(--text-dim)' }} />
+                          )}
                           <div>
-                            <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>{c.full_name || c.name}</strong>
-                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                              (PAN: <code>{c.pan_number || 'N/A'}</code>)
+                            <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>{c.full_name || c.name}</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                              PAN: <code>{c.pan_number || c.pan || '—'}</code>
                             </span>
                           </div>
                         </div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.bank_account_no || 'Bank A/C'}</span>
+
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {c.bank_name || c.bank_account_no || 'Demat Active'}
+                        </span>
                       </div>
                     );
                   })
                 ) : (
-                  <div style={{ padding: '12px', textAlign: 'center', fontSize: '0.84rem', color: 'var(--text-muted)' }}>No customers found matching search</div>
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                    No customers found matching search.
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Category & Lots & Bid Amount */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Category</label>
-                <select className="input-field" value={category} onChange={(e) => setCategory(e.target.value)} style={{ width: '100%', height: '40px' }}>
-                  <option value="RETAIL">RETAIL</option>
-                  <option value="SH">SHAREHOLDER</option>
-                  <option value="HNI">HNI</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Lots Applied</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  className="input-field"
-                  value={lots}
-                  onChange={(e) => setLots(Math.max(1, parseInt(e.target.value) || 1))}
-                  style={{ width: '100%', height: '40px', fontWeight: 700 }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Bid Amount (₹)</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={bidAmount}
-                  onChange={(e) => setBidAmount(e.target.value)}
-                  style={{ width: '100%', height: '40px', fontWeight: 700 }}
-                />
-              </div>
-            </div>
-
-            {/* Initial Allotment Status */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>Initial Allotment Status</label>
-              <select className="input-field" value={allotmentStatus} onChange={(e) => setAllotmentStatus(e.target.value)} style={{ width: '100%', height: '40px' }}>
-                <option value="Pending">Pending (Applied)</option>
-                <option value="Full Allotment">Full Allotment</option>
-                <option value="Partial Allotment">Partial Allotment</option>
-                <option value="Rejected">Rejected / Unallotted</option>
-              </select>
-            </div>
-
-            {/* Submit Actions */}
+            {/* Modal Controls */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
               <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving Applications...' : `Save & Apply (${selectedCustomerIds.length} Bids)`}
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isSubmitting || selectedCustomerIds.length === 0}
+                style={{ padding: '10px 24px', fontSize: '14px' }}
+              >
+                {isSubmitting ? 'Registering Bids...' : `Apply for ${selectedCustomerIds.length} Customer(s)`}
               </button>
             </div>
           </form>
         ) : (
-          /* TAB 2: BULK EXCEL UPLOAD BIDS WITH TEMPLATE DOWNLOAD */
-          <div>
-            {/* 1. Target IPO for Bulk Upload */}
+          /* TAB 2: BULK EXCEL UPLOAD */
+          <div style={{ padding: '20px 28px 24px 28px', overflowY: 'auto', flex: 1 }}>
+            {/* Target IPO for Bulk File */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                Select Target IPO for Bulk Excel Bids *
-              </label>
+              <label className="input-label">Select Target IPO Offering for Bulk File *</label>
               <select
                 className="input-field"
                 value={ipoId}
                 onChange={(e) => setIpoId(e.target.value)}
-                style={{ width: '100%', height: '42px', borderRadius: '10px', fontWeight: 700 }}
+                style={{ fontWeight: 700 }}
                 required
               >
-                <option value="">-- Choose IPO Offering --</option>
+                <option value="">-- Choose IPO --</option>
                 {ipos.map((ipo) => (
                   <option key={ipo.id} value={ipo.id}>
                     {ipo.ipo_name} ({ipo.ipo_type || 'Mainboard'})
@@ -521,43 +611,50 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
 
             {/* Download Template Banner */}
             <div style={{
-              background: '#EEF3FF',
-              border: '1px solid rgba(36, 87, 197, 0.25)',
-              borderRadius: '12px',
-              padding: '14px 16px',
-              marginBottom: '20px',
+              background: 'rgba(4, 47, 46, 0.03)',
+              border: '1px solid var(--panel-border)',
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '18px',
               display: 'flex',
-              justify: 'space-between',
-              alignItems: 'center'
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+              flexWrap: 'wrap'
             }}>
               <div>
-                <strong style={{ color: '#173B7A', fontSize: '0.9rem', display: 'block' }}>
+                <strong style={{ color: 'var(--text-main)', fontSize: '14px', display: 'block' }}>
                   📥 Download Pre-Filled Customer Template
                 </strong>
-                <span style={{ fontSize: '0.8rem', color: '#667085' }}>
-                  Contains all database customers with "Application Status" column. Mark Applied/Not Applied.
+                <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                  Contains customer roster pre-filled. Mark "Applied" or "Not Applied".
                 </span>
               </div>
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={handleDownloadTemplate}
-                style={{ whiteSpace: 'nowrap', fontSize: '0.82rem', height: '36px' }}
+                style={{ whiteSpace: 'nowrap', fontSize: '12.5px', padding: '6px 14px' }}
               >
                 <Download size={14} /> Download Template
               </button>
             </div>
 
+            {/* File Upload Dropzone (Watermelon file-upload-2 style) */}
             <div style={{
-              border: '2px dashed var(--primary)', borderRadius: '14px', padding: '28px 20px',
-              textAlign: 'center', background: 'rgba(37, 99, 235, 0.04)', marginBottom: '20px'
+              border: '2px dashed var(--panel-border)',
+              borderRadius: '20px',
+              padding: '28px 20px',
+              textAlign: 'center',
+              background: 'rgba(4, 47, 46, 0.02)',
+              marginBottom: '20px'
             }}>
-              <UploadCloud size={40} style={{ color: 'var(--primary)', marginBottom: '10px' }} />
-              <h4 style={{ margin: '0 0 6px', fontSize: '1.05rem', fontWeight: 700 }}>
-                Upload Customer Bids Excel File
+              <UploadCloud size={38} style={{ color: 'var(--brand-accent)', margin: '0 auto 8px auto', display: 'block' }} />
+              <h4 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
+                Upload Customer Bids Excel / CSV File
               </h4>
-              <p style={{ margin: '0 0 16px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Upload the updated CSV/Excel file with customer statuses for the selected IPO.
+              <p style={{ margin: '0 0 16px', fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                Upload the updated spreadsheet to bulk register application bids.
               </p>
 
               <input
@@ -568,18 +665,17 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
                 style={{ display: 'none' }}
               />
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Choose Excel / CSV File
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding: '8px 18px', fontSize: '13px' }}
+              >
+                Choose Excel / CSV File
+              </button>
 
               {importStatus && (
-                <div style={{ marginTop: '14px', fontSize: '0.85rem', fontWeight: 600, color: importStatus.includes('❌') ? '#EF4444' : 'var(--primary)' }}>
+                <div style={{ marginTop: '14px', fontSize: '13px', fontWeight: 700, color: importStatus.includes('❌') ? 'var(--danger-text)' : 'var(--success-text)' }}>
                   {importStatus}
                 </div>
               )}
@@ -594,6 +690,7 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
                 className="btn btn-primary"
                 onClick={handleBulkImportSubmit}
                 disabled={isSubmitting || !selectedFile || !ipoId}
+                style={{ padding: '10px 24px', fontSize: '14px' }}
               >
                 {isSubmitting ? 'Processing Bids...' : 'Upload & Save Bids to IPO'}
               </button>

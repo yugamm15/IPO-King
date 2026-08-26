@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, AlertTriangle, CheckCircle, UploadCloud, FileText, Image as ImageIcon, X, Plus, Landmark } from 'lucide-react';
+import {
+  Users,
+  AlertTriangle,
+  CheckCircle,
+  UploadCloud,
+  FileText,
+  X,
+  Plus,
+  Landmark,
+  ShieldCheck,
+  Building2,
+  Lock,
+  CreditCard
+} from 'lucide-react';
 import { supabase, fetchBanks } from '../services/db';
 
 export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustomerNo, initialData }) {
@@ -330,7 +343,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
       setTimeout(() => {
         onClose();
-      }, 800);
+      }, 600);
     } catch (err) {
       console.error('Save customer exception:', err);
       return triggerError(`Save failed: ${err.message || 'Server error'}`);
@@ -340,136 +353,366 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
   };
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px'
-    }} onClick={onClose}>
-      <div ref={modalScrollRef} onClick={(e) => e.stopPropagation()} style={{
-        maxWidth: '860px', width: '100%', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)', border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#0F172A'
-      }}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        ref={modalScrollRef}
+        onClick={(e) => e.stopPropagation()}
+        className="modal-content"
+        style={{
+          maxWidth: '920px',
+          width: '92vw',
+          maxHeight: '90vh',
+          borderRadius: '28px',
+          padding: '0',
+          overflow: 'hidden',
+          background: 'var(--panel-bg)'
+        }}
+      >
+        {/* Modal Header (Hero-11) */}
         <div style={{
-          padding: '18px 24px', borderBottom: '1px solid #E2E8F0',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF',
-          borderTopLeftRadius: '16px', borderTopRightRadius: '16px'
+          padding: '20px 28px',
+          borderBottom: '1px solid var(--panel-border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'var(--panel-bg)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'rgba(4, 47, 46, 0.08)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
               <Users size={22} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
                 {isEditMode ? 'Edit Customer Details' : 'Add New Customer'}
               </h3>
+              <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                Register Demat parameters, bank coordinates, and KYC document proofs.
+              </p>
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748B', lineHeight: 1 }}>&times;</button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'rgba(4, 47, 46, 0.05)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <X size={16} />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ padding: '20px 24px' }}>
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>1. NO. (Customer No) 🔒</label>
-                <input type="number" name="customer_no" placeholder="Auto" value={formData.customer_no} readOnly disabled style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: '#F1F5F9', color: '#475569', cursor: 'not-allowed', fontWeight: 600, fontSize: '13px' }} />
+        {/* Scrollable Form Body */}
+        <form onSubmit={handleSubmit} style={{ padding: '24px 28px', overflowY: 'auto', flex: 1 }}>
+
+          {errorMsg && (
+            <div style={{
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'center',
+              background: 'var(--danger-light)',
+              color: 'var(--danger-text)',
+              border: '1px solid rgba(220, 38, 38, 0.2)',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: 600
+            }}>
+              <AlertTriangle size={18} />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div style={{
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'center',
+              background: 'var(--success-light)',
+              color: 'var(--success-text)',
+              border: '1px solid rgba(5, 150, 105, 0.2)',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: 600
+            }}>
+              <CheckCircle size={18} />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* Section 1: Customer Identification & Demat */}
+          <div style={{
+            background: 'rgba(4, 47, 46, 0.02)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '20px',
+            padding: '20px',
+            marginBottom: '20px'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+              <div>
+                <label className="input-label">1. NO. (Customer No) 🔒</label>
+                <input
+                  type="number"
+                  name="customer_no"
+                  placeholder="Auto"
+                  value={formData.customer_no}
+                  readOnly
+                  disabled
+                  className="input-field"
+                  style={{ background: 'rgba(4, 47, 46, 0.05)', color: 'var(--text-muted)', cursor: 'not-allowed', fontWeight: 700 }}
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>2. NAME (Full Name) *</label>
-                <input type="text" name="full_name" placeholder="e.g. Ramesh Kumar" value={formData.full_name} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} required />
+
+              <div>
+                <label className="input-label">2. NAME (Full Name) *</label>
+                <input
+                  type="text"
+                  name="full_name"
+                  placeholder="e.g. Ramesh Kumar"
+                  value={formData.full_name}
+                  onChange={handleChange}
+                  className="input-field"
+                  required
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>3. CA (CA Number)</label>
-                <input type="text" name="ca_number" placeholder="e.g. AC123456" value={formData.ca_number} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">3. CA (CA Number)</label>
+                <input
+                  type="text"
+                  name="ca_number"
+                  placeholder="e.g. AC123456"
+                  value={formData.ca_number}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>4. PAN (PAN NUMBER) *</label>
-                <input type="text" name="pan_number" maxLength={10} placeholder="e.g. ABCDE1234F" value={formData.pan_number} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} required />
+
+              <div>
+                <label className="input-label">4. PAN (PAN NUMBER) *</label>
+                <input
+                  type="text"
+                  name="pan_number"
+                  maxLength={10}
+                  placeholder="e.g. ABCDE1234F"
+                  value={formData.pan_number}
+                  onChange={handleChange}
+                  className="input-field"
+                  style={{ textTransform: 'uppercase', fontWeight: 700 }}
+                  required
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>5. DPID (DEMAT A/C)</label>
-                <input type="text" name="dpid" maxLength={16} placeholder="e.g. 1208160012345678" value={formData.dpid} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">5. DPID (DEMAT A/C)</label>
+                <input
+                  type="text"
+                  name="dpid"
+                  maxLength={16}
+                  placeholder="e.g. 1208160012345678"
+                  value={formData.dpid}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>
-                  6. BANK NAME 🏦
-                </label>
+
+              <div>
+                <label className="input-label">6. BANK NAME 🏦</label>
                 <select
                   name="bank_name"
                   value={formData.bank_name}
                   onChange={handleChange}
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: '6px',
-                    border: '1px solid var(--input-border)', background: 'var(--input-bg)',
-                    color: formData.bank_name ? 'var(--text-main)' : '#94A3B8',
-                    fontSize: '13px', cursor: 'pointer'
-                  }}
+                  className="input-field"
+                  style={{ cursor: 'pointer' }}
                 >
                   <option value="">-- Select Bank Name --</option>
                   {availableBanks.map((b, idx) => (
-                    <option key={b.id || idx} value={b.bank_name} style={{ color: '#0F172A' }}>
+                    <option key={b.id || idx} value={b.bank_name}>
                       {b.bank_name} {b.ifsc_prefix ? `(${b.ifsc_prefix})` : ''}
                     </option>
                   ))}
                 </select>
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>7. Bank A/c No.</label>
-                <input type="text" name="bank_account_no" placeholder="e.g. 50100234567890" value={formData.bank_account_no} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">7. Bank A/c No.</label>
+                <input
+                  type="text"
+                  name="bank_account_no"
+                  placeholder="e.g. 50100234567890"
+                  value={formData.bank_account_no}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>8. Login ID</label>
-                <input type="text" name="login_id" placeholder="e.g. ramesh_k" value={formData.login_id} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">8. Login ID</label>
+                <input
+                  type="text"
+                  name="login_id"
+                  placeholder="e.g. ramesh_k"
+                  value={formData.login_id}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>9. ARHAM</label>
-                <input type="text" name="password_encrypted" placeholder="Arham" value={formData.password_encrypted} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">9. ARHAM (Password)</label>
+                <input
+                  type="text"
+                  name="password_encrypted"
+                  placeholder="Arham"
+                  value={formData.password_encrypted}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>10. CODE (Customer Code)</label>
-                <input type="text" name="code" placeholder="e.g. IPO-004" value={formData.code} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">10. CODE (Customer Code)</label>
+                <input
+                  type="text"
+                  name="code"
+                  placeholder="e.g. IPO-004"
+                  value={formData.code}
+                  onChange={handleChange}
+                  className="input-field"
+                  style={{ fontWeight: 700 }}
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>11. Mobile Number</label>
-                <input type="text" name="mobile_number" placeholder="e.g. 9876543210" value={formData.mobile_number} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">11. Mobile Number</label>
+                <input
+                  type="text"
+                  name="mobile_number"
+                  placeholder="e.g. 9876543210"
+                  value={formData.mobile_number}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>12. BALANCE (₹)</label>
-                <input type="number" name="balance" placeholder="e.g. 50000" value={formData.balance} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">12. BALANCE (₹)</label>
+                <input
+                  type="number"
+                  name="balance"
+                  placeholder="e.g. 50000"
+                  value={formData.balance}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>13. Phone Kono chhe (Alt Phone)</label>
-                <input type="text" name="phone_alternate" placeholder="e.g. 9876543211 (Brother)" value={formData.phone_alternate} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">13. Alt Phone (Kono chhe)</label>
+                <input
+                  type="text"
+                  name="phone_alternate"
+                  placeholder="e.g. 9876543211 (Brother)"
+                  value={formData.phone_alternate}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>14. EMAIL ADDRESS</label>
-                <input type="email" name="email" placeholder="e.g. ramesh@email.com" value={formData.email} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">14. EMAIL ADDRESS</label>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="e.g. ramesh@email.com"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>15. PHONE (OTHER NUMBER)</label>
-                <input type="text" name="phone_other" placeholder="e.g. 9123456789" value={formData.phone_other} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">15. Other Phone Number</label>
+                <input
+                  type="text"
+                  name="phone_other"
+                  placeholder="e.g. 9123456789"
+                  value={formData.phone_other}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>16. RETURN AMOUNT (₹)</label>
-                <input type="number" name="return_amount" placeholder="0" value={formData.return_amount} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div>
+                <label className="input-label">16. RETURN AMOUNT (₹)</label>
+                <input
+                  type="number"
+                  name="return_amount"
+                  placeholder="0"
+                  value={formData.return_amount}
+                  onChange={handleChange}
+                  className="input-field"
+                />
               </div>
-            </div>
-            <div className="form-group" style={{ marginTop: '12px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-main)' }}>17. TDS REMARKS</label>
-              <input type="text" name="tds_remarks" placeholder="e.g. 10% TDS Deducted for FY26" value={formData.tds_remarks} onChange={handleChange} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }} />
+
+              <div style={{ gridColumn: 'span 2' }}>
+                <label className="input-label">17. TDS REMARKS</label>
+                <input
+                  type="text"
+                  name="tds_remarks"
+                  placeholder="e.g. 10% TDS Deducted for FY26"
+                  value={formData.tds_remarks}
+                  onChange={handleChange}
+                  className="input-field"
+                />
+              </div>
             </div>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                17. BENEFICIARY NAMES (MULTIPLE BENEFICIARIES ALLOWED)
-              </label>
-              <button type="button" onClick={addBeneficiaryField} style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Plus size={12} /> Add Another Beneficiary
+          {/* Section 2: Beneficiary Names */}
+          <div style={{
+            background: 'rgba(4, 47, 46, 0.02)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '20px',
+            padding: '20px',
+            marginBottom: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Beneficiary Accounts (Multiple Allowed)
+              </span>
+              <button
+                type="button"
+                onClick={addBeneficiaryField}
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '12px', gap: '4px' }}
+              >
+                <Plus size={13} /> Add Beneficiary
               </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {beneficiaries.map((bName, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
@@ -477,11 +720,25 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                     placeholder={`Beneficiary #${idx + 1} Name (e.g. Sunita Kumar)`}
                     value={bName}
                     onChange={(e) => handleBeneficiaryChange(idx, e.target.value)}
-                    style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '13px' }}
+                    className="input-field"
                   />
                   {beneficiaries.length > 1 && (
-                    <button type="button" onClick={() => removeBeneficiaryField(idx)} style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '6px', padding: '8px 10px', cursor: 'pointer' }}>
-                      <X size={14} />
+                    <button
+                      type="button"
+                      onClick={() => removeBeneficiaryField(idx)}
+                      style={{
+                        background: 'var(--danger-light)',
+                        color: 'var(--danger-text)',
+                        border: '1px solid rgba(220, 38, 38, 0.2)',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <X size={15} />
                     </button>
                   )}
                 </div>
@@ -489,83 +746,126 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
             </div>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '12px' }}>
-              🖼️ DOCUMENT PICTURES
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-              <div style={{ background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center', position: 'relative' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>PAN Card Photo</span>
+          {/* Section 3: Document Uploads (Watermelon file-upload-2 style) */}
+          <div style={{
+            background: 'rgba(4, 47, 46, 0.02)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '20px',
+            padding: '20px',
+            marginBottom: '10px'
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '14px' }}>
+              KYC &amp; Demat Documents (PAN / Aadhaar / Cheque / CMR)
+            </span>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+              {/* PAN Card */}
+              <div style={{
+                background: 'var(--panel-bg)',
+                border: '1.5px dashed var(--panel-border)',
+                borderRadius: '16px',
+                padding: '14px',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>PAN Card Photo</span>
                 {docPreviews.pan_card ? (
                   <div style={{ position: 'relative' }}>
                     {docPreviews.pan_card.startsWith('data:image') ? (
-                      <img src={docPreviews.pan_card} alt="PAN Card" style={{ width: '100%', height: '75px', objectFit: 'cover', borderRadius: '6px' }} />
+                      <img src={docPreviews.pan_card} alt="PAN Card" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
                     ) : (
-                      <div style={{ padding: '20px 4px', fontSize: '11px' }}><FileText size={20} /><br />{docPreviews.pan_card}</div>
+                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.pan_card}</div>
                     )}
-                    <button type="button" onClick={() => removeDoc('pan_card')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer' }}><X size={12} /></button>
+                    <button type="button" onClick={() => removeDoc('pan_card')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                   </div>
                 ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '16px 4px' }}>
-                    <UploadCloud size={24} style={{ color: '#2563EB', marginBottom: '4px' }} />
-                    <span style={{ fontSize: '10px', display: 'block', color: 'var(--text-dim)' }}>Upload PAN Image</span>
+                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
+                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload PAN</span>
                     <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('pan_card', e.target.files[0])} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>
-              <div style={{ background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center', position: 'relative' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Aadhaar Card Photo</span>
+
+              {/* Aadhaar Card */}
+              <div style={{
+                background: 'var(--panel-bg)',
+                border: '1.5px dashed var(--panel-border)',
+                borderRadius: '16px',
+                padding: '14px',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Aadhaar Card</span>
                 {docPreviews.aadhaar_card ? (
                   <div style={{ position: 'relative' }}>
                     {docPreviews.aadhaar_card.startsWith('data:image') ? (
-                      <img src={docPreviews.aadhaar_card} alt="Aadhaar" style={{ width: '100%', height: '75px', objectFit: 'cover', borderRadius: '6px' }} />
+                      <img src={docPreviews.aadhaar_card} alt="Aadhaar" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
                     ) : (
-                      <div style={{ padding: '20px 4px', fontSize: '11px' }}><FileText size={20} /><br />{docPreviews.aadhaar_card}</div>
+                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.aadhaar_card}</div>
                     )}
-                    <button type="button" onClick={() => removeDoc('aadhaar_card')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer' }}><X size={12} /></button>
+                    <button type="button" onClick={() => removeDoc('aadhaar_card')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                   </div>
                 ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '16px 4px' }}>
-                    <UploadCloud size={24} style={{ color: '#2563EB', marginBottom: '4px' }} />
-                    <span style={{ fontSize: '10px', display: 'block', color: 'var(--text-dim)' }}>Upload Aadhaar Image</span>
+                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
+                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload Aadhaar</span>
                     <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('aadhaar_card', e.target.files[0])} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>
-              <div style={{ background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center', position: 'relative' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Cancelled Cheque</span>
+
+              {/* Cancelled Cheque */}
+              <div style={{
+                background: 'var(--panel-bg)',
+                border: '1.5px dashed var(--panel-border)',
+                borderRadius: '16px',
+                padding: '14px',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Cancelled Cheque</span>
                 {docPreviews.cheque_proof ? (
                   <div style={{ position: 'relative' }}>
                     {docPreviews.cheque_proof.startsWith('data:image') ? (
-                      <img src={docPreviews.cheque_proof} alt="Cheque" style={{ width: '100%', height: '75px', objectFit: 'cover', borderRadius: '6px' }} />
+                      <img src={docPreviews.cheque_proof} alt="Cheque" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
                     ) : (
-                      <div style={{ padding: '20px 4px', fontSize: '11px' }}><FileText size={20} /><br />{docPreviews.cheque_proof}</div>
+                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.cheque_proof}</div>
                     )}
-                    <button type="button" onClick={() => removeDoc('cheque_proof')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer' }}><X size={12} /></button>
+                    <button type="button" onClick={() => removeDoc('cheque_proof')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                   </div>
                 ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '16px 4px' }}>
-                    <UploadCloud size={24} style={{ color: '#2563EB', marginBottom: '4px' }} />
-                    <span style={{ fontSize: '10px', display: 'block', color: 'var(--text-dim)' }}>Upload Cheque Proof</span>
+                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
+                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload Cheque</span>
                     <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('cheque_proof', e.target.files[0])} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>
-              <div style={{ background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center', position: 'relative' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Demat CMR Copy</span>
+
+              {/* Demat CMR Copy */}
+              <div style={{
+                background: 'var(--panel-bg)',
+                border: '1.5px dashed var(--panel-border)',
+                borderRadius: '16px',
+                padding: '14px',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Demat CMR Copy</span>
                 {docPreviews.demat_proof ? (
                   <div style={{ position: 'relative' }}>
                     {docPreviews.demat_proof.startsWith('data:image') ? (
-                      <img src={docPreviews.demat_proof} alt="Demat Proof" style={{ width: '100%', height: '75px', objectFit: 'cover', borderRadius: '6px' }} />
+                      <img src={docPreviews.demat_proof} alt="Demat Proof" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
                     ) : (
-                      <div style={{ padding: '20px 4px', fontSize: '11px' }}><FileText size={20} /><br />{docPreviews.demat_proof}</div>
+                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.demat_proof}</div>
                     )}
-                    <button type="button" onClick={() => removeDoc('demat_proof')} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer' }}><X size={12} /></button>
+                    <button type="button" onClick={() => removeDoc('demat_proof')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                   </div>
                 ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '16px 4px' }}>
-                    <UploadCloud size={24} style={{ color: '#2563EB', marginBottom: '4px' }} />
-                    <span style={{ fontSize: '10px', display: 'block', color: 'var(--text-dim)' }}>Upload Demat Proof</span>
+                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
+                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload CMR</span>
                     <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('demat_proof', e.target.files[0])} style={{ display: 'none' }} />
                   </label>
                 )}
@@ -573,26 +873,24 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
             </div>
           </div>
 
-          {errorMsg && (
-            <div className="auth-banner auth-banner-error" style={{ marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', background: '#fee2e2', color: '#991b1b', padding: '10px 14px', borderRadius: '8px' }}>
-              <AlertTriangle size={18} />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="auth-banner auth-banner-success" style={{ marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center', background: '#dcfce7', color: '#166534', padding: '10px 14px', borderRadius: '8px' }}>
-              <CheckCircle size={18} />
-              <span>{successMsg}</span>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>
+          {/* Modal Footer */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+              disabled={isSubmitting}
+              style={{ padding: '10px 20px', fontSize: '14px' }}
+            >
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ background: '#2563EB', color: '#fff', minWidth: '200px' }}>
-              {isSubmitting ? 'Updating Customer Profile...' : (isEditMode ? 'Update Customer Profile' : 'Save Customer Profile')}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting}
+              style={{ padding: '10px 24px', minWidth: '220px', fontSize: '14px' }}
+            >
+              {isSubmitting ? 'Saving Profile...' : (isEditMode ? 'Update Customer Profile' : 'Save Customer Profile')}
             </button>
           </div>
         </form>
