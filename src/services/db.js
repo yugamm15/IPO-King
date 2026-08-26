@@ -139,7 +139,7 @@ export async function fetchApplicationsLedger(force = false) {
     const res = await queryWithTimeout(
       supabase
         .from('applications')
-        .select('*, customers(full_name, pan_number, bank_account_no, bank_name, dpid), ipos(ipo_name, status, listing_date, price_band_max)')
+        .select('*, customers(full_name, pan_number, bank_account_no, bank_name, dpid), ipos(*)')
         .order('created_at', { ascending: false }),
       3000
     );
@@ -148,33 +148,72 @@ export async function fetchApplicationsLedger(force = false) {
       return dbCache.applications || [];
     }
 
-    const mapped = res.data.map(item => ({
-      id: item.id,
-      customer_id: item.customer_id,
-      ipo_id: item.ipo_id,
-      customer_name: item.customers?.full_name || 'Customer',
-      pan: item.customers?.pan_number || '—',
-      bank_name: item.customers?.bank_name || item.bank_name || '—',
-      bank_account: item.customers?.bank_account_no || '—',
-      ipo_name: item.ipos?.ipo_name || 'IPO Offering',
-      lots_applied: item.lots_applied || item.quantity || 1,
-      bid_amount: item.bid_amount || 15000,
-      allotment_status: item.allotment_status || 'Pending',
-      allotted_quantity: item.allotted_quantity || 0,
-      exit_mode: item.exit_mode || 'MARKET',
-      kostak_rate: Number(item.kostak_rate) || 0,
-      sauda_rate: Number(item.sauda_rate) || 0,
-      exit_price: Number(item.exit_price) || 0,
-      profit_amount: Number(item.profit_amount) || 0,
-      client_share_60: Number(item.client_share_60) || 0,
-      admin_share_40: Number(item.admin_share_40) || 0,
-      tds_10: Number(item.tds_10) || 0,
-      net_payout: Number(item.net_payout) || 0,
-      settlement_remarks: item.settlement_remarks || '',
-      dpid: item.customers?.dpid || '—',
-      ipo_status: item.ipos?.status || 'open',
-      listing_date: item.ipos?.listing_date || '—'
-    }));
+    const storedOverrides = getStoredCache('app_overrides') || {};
+
+    const mapped = res.data.map(item => {
+      const override = storedOverrides[item.id] || {};
+      const ipoData = item.ipos || {};
+
+      const exitMode = override.exit_mode || item.exit_mode || ipoData.exit_mode || 'MARKET';
+      const kostakRate = Number(override.kostak_rate ?? item.kostak_rate ?? ipoData.kostak_rate) || 0;
+      const saudaRate = Number(override.sauda_rate ?? item.sauda_rate ?? ipoData.sauda_rate) || 0;
+
+      // Extract listing / sell price from overrides, db fields, or IPO gain_est tag
+      let listingPrice = Number(override.exit_price ?? item.exit_price ?? ipoData.listing_price) || 0;
+      if (!listingPrice && ipoData.gain_est) {
+        const match = String(ipoData.gain_est).match(/Listed @ ₹([0-9.]+)/);
+        if (match) listingPrice = Number(match[1]);
+      }
+
+      const exitParams = {
+        exit_mode: exitMode,
+        exit_price: listingPrice,
+        listing_price: listingPrice,
+        pre_listing_price: Number(override.pre_listing_price ?? item.pre_listing_price ?? ipoData.pre_listing_price) || listingPrice,
+        kostak_rate: kostakRate,
+        sauda_rate: saudaRate
+      };
+
+      const calculated = calculateExitMetrics(exitMode, exitParams, item, ipoData);
+
+      const profitAmt = Number(item.profit_amount) > 0 ? Number(item.profit_amount) : calculated.profit_amount;
+      const clientShare = Number(item.client_share_60) > 0 ? Number(item.client_share_60) : calculated.client_share_60;
+      const adminShare = Number(item.admin_share_40) > 0 ? Number(item.admin_share_40) : calculated.admin_share_40;
+      const tds = Number(item.tds_10) > 0 ? Number(item.tds_10) : calculated.tds_10;
+      const net = Number(item.net_payout) > 0 ? Number(item.net_payout) : calculated.net_payout;
+
+      const lotSize = Number(ipoData.lot_size) || 1;
+      const rawLots = Number(item.lots_applied) || (item.quantity && lotSize > 1 ? Math.floor(Number(item.quantity) / lotSize) : 1) || 1;
+
+      return {
+        id: item.id,
+        customer_id: item.customer_id,
+        ipo_id: item.ipo_id,
+        customer_name: item.customers?.full_name || 'Customer',
+        pan: item.customers?.pan_number || '—',
+        bank_name: item.customers?.bank_name || item.bank_name || '—',
+        bank_account: item.customers?.bank_account_no || '—',
+        ipo_name: ipoData.ipo_name || 'IPO Offering',
+        lots_applied: rawLots,
+        quantity: Number(item.quantity) || (rawLots * lotSize),
+        bid_amount: item.bid_amount || 15000,
+        allotment_status: item.allotment_status || 'Pending',
+        allotted_quantity: item.allotted_quantity || (String(item.allotment_status).toLowerCase().includes('full') ? Number(item.quantity) : 0),
+        exit_mode: exitMode,
+        kostak_rate: kostakRate,
+        sauda_rate: saudaRate,
+        exit_price: calculated.exit_price,
+        profit_amount: profitAmt,
+        client_share_60: clientShare,
+        admin_share_40: adminShare,
+        tds_10: tds,
+        net_payout: net,
+        settlement_remarks: calculated.settlement_remarks,
+        dpid: item.customers?.dpid || '—',
+        ipo_status: ipoData.status || 'open',
+        listing_date: ipoData.listing_date || '—'
+      };
+    });
 
     dbCache.applications = mapped;
     dbCache.appsTimestamp = Date.now();
@@ -705,6 +744,18 @@ export async function applyPreListingExitToApplications(applicationIds = [], mod
           : 'Full Allotment';
 
         try {
+          const currentOverrides = getStoredCache('app_overrides') || {};
+          currentOverrides[app.id] = {
+            exit_mode: exitMode,
+            exit_price: metrics.exit_price,
+            kostak_rate: Number(exitParams.kostak_rate) || 0,
+            sauda_rate: Number(exitParams.sauda_rate) || 0,
+            allotment_status: newStatus
+          };
+          setStoredCache('app_overrides', currentOverrides);
+        } catch (_) {}
+
+        try {
           const appUpdatePayload = {
             allotment_status: newStatus,
             exit_mode: exitMode,
@@ -795,6 +846,19 @@ export async function updateApplicationIndividualExit(applicationId, {
       net_payout: metrics.net_payout,
       settlement_remarks: metrics.settlement_remarks
     };
+
+    // Persist into local overrides cache for instant reactivity
+    try {
+      const currentOverrides = getStoredCache('app_overrides') || {};
+      currentOverrides[applicationId] = {
+        exit_mode,
+        exit_price: metrics.exit_price,
+        kostak_rate: exitParams.kostak_rate,
+        sauda_rate: exitParams.sauda_rate,
+        allotment_status
+      };
+      setStoredCache('app_overrides', currentOverrides);
+    } catch (_) {}
 
     const { data: updatedApp, error: updateErr } = await supabase
       .from('applications')
