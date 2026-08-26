@@ -589,30 +589,34 @@ export function calculateExitMetrics(modeOrParams, exitParams = {}, app = {}, ip
       : `Subject to Sauda @ ₹${rate}/lot (Total ₹${grossProfit.toLocaleString('en-IN')})`;
   } else if (exitMode === 'PRE_LISTING') {
     const price = Number(params.pre_listing_price) || 0;
-    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
-    const gainPerShare = Math.max(0, price - issueMax);
-    grossProfit = isExplicitRejected ? 0 : Math.round(gainPerShare * rawQty);
+    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || (app.bid_amount && app.quantity ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : 100);
+    const diffPerShare = price > 0 ? (price - issueMax) : 0;
+    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * rawQty);
     exitPrice = price;
     settlementRemarks = isExplicitRejected
       ? 'Pre-Listing Void (Rejected)'
-      : `Off-Market Sale @ ₹${price}/sh (+₹${gainPerShare}/sh)`;
+      : (diffPerShare < 0
+          ? `Off-Market Discount Sale @ ₹${price}/sh (-₹${Math.abs(diffPerShare)}/sh Loss)`
+          : `Off-Market Sale @ ₹${price}/sh (+₹${diffPerShare}/sh)`);
   } else {
     // Standard MARKET listing
-    const price = Number(params.listing_price) || Number(ipo?.listing_price) || 0;
-    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || 100;
-    const gainPerShare = Math.max(0, price - issueMax);
-    grossProfit = isExplicitRejected ? 0 : Math.round(gainPerShare * rawQty);
+    const price = Number(params.listing_price) || Number(params.exit_price) || Number(ipo?.listing_price) || 0;
+    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || (app.bid_amount && app.quantity ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : 100);
+    const diffPerShare = price > 0 ? (price - issueMax) : 0;
+    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * rawQty);
     exitPrice = price;
     settlementRemarks = isExplicitRejected
       ? 'No Allotment'
-      : `Exchange Listed @ ₹${price}/sh (+₹${gainPerShare}/sh)`;
+      : (diffPerShare < 0
+          ? `Exchange Listed @ ₹${price}/sh (-₹${Math.abs(diffPerShare)}/sh Discount/Loss)`
+          : `Exchange Listed @ ₹${price}/sh (+₹${diffPerShare}/sh)`);
   }
 
-  // 40% Customer Gross Share, 60% Company Share, 10% TDS on Customer Share
+  // 40% Customer Share, 60% Company Share, 10% TDS ONLY on Positive Profit
   const custGrossShare = Math.round(grossProfit * 0.40);
   const adminShare = Math.round(grossProfit * 0.60);
-  const tds10 = Math.round(custGrossShare * 0.10);
-  const netPayout = Math.max(0, custGrossShare - tds10);
+  const tds10 = custGrossShare > 0 ? Math.round(custGrossShare * 0.10) : 0;
+  const netPayout = custGrossShare > 0 ? (custGrossShare - tds10) : custGrossShare;
 
   return {
     exit_mode: exitMode,

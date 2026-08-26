@@ -728,9 +728,17 @@ export default function Applications({ showConfirm }) {
                       </select>
                     </td>
                     <td>
-                      <strong style={{ color: clientProfit > 0 ? 'var(--success-text)' : 'var(--text-muted)' }}>
-                        {clientProfit > 0 ? `₹${clientProfit.toLocaleString('en-IN')}` : '₹0'}
-                      </strong>
+                      {clientProfit < 0 ? (
+                        <strong style={{ color: 'var(--danger-text)' }}>
+                          -₹{Math.abs(clientProfit).toLocaleString('en-IN')}
+                        </strong>
+                      ) : clientProfit > 0 ? (
+                        <strong style={{ color: 'var(--success-text)' }}>
+                          +₹{clientProfit.toLocaleString('en-IN')}
+                        </strong>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>₹0</span>
+                      )}
                     </td>
                     <td>
                       <span style={{ color: tdsAmt > 0 ? 'var(--warning)' : 'var(--text-muted)', fontWeight: 600 }}>

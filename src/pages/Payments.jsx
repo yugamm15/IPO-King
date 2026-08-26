@@ -61,7 +61,7 @@ export default function Payments() {
       const gross = Number(app.profit_amount) || 0;
       const clientProfit = Number(app.client_share_60) || 0;
       const tds10 = Number(app.tds_10) || 0;
-      const netPayout = Number(app.net_payout) || (clientProfit > 0 ? (clientProfit - tds10) : 0);
+      const netPayout = Number(app.net_payout) || (clientProfit > 0 ? (clientProfit - tds10) : clientProfit);
 
       let exitLabel = '40-60 Split';
       if (app.exit_mode === 'KOSTAK') exitLabel = `Kostak Exit @ ₹${app.kostak_rate || app.exit_price}`;
@@ -76,10 +76,10 @@ export default function Payments() {
         bank_name: app.bank_name || '—',
         beneficiary: `${app.customer_name || 'Customer'} (${app.bank_account || 'Bank A/C'})`,
         txn_type: `Profit Distribution (${exitLabel})`,
-        gross_amount: `₹ ${gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-        profit_40: `₹ ${clientProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        gross_amount: `${gross < 0 ? '-₹ ' + Math.abs(gross).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        profit_40: `${clientProfit < 0 ? '-₹ ' + Math.abs(clientProfit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + clientProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
         tds_10: `₹ ${tds10.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-        net_payout: `₹ ${netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        net_payout: `${netPayout < 0 ? '-₹ ' + Math.abs(netPayout).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
         status: app.allotment_status || 'Verified & Audited'
       };
     });
@@ -104,8 +104,8 @@ export default function Payments() {
       const grossStcg = Number(app.profit_amount) || 0;
       const sellTurnover = buyValue + grossStcg;
       const client40 = Number(app.client_share_60) || Math.round(grossStcg * 0.40);
-      const tds10 = Number(app.tds_10) || Math.round(client40 * 0.10);
-      const netPayout = Number(app.net_payout) || Math.max(0, client40 - tds10);
+      const tds10 = Number(app.tds_10) || (client40 > 0 ? Math.round(client40 * 0.10) : 0);
+      const netPayout = Number(app.net_payout) || (client40 > 0 ? (client40 - tds10) : client40);
 
       return {
         id: app.id || idx,

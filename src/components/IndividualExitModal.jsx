@@ -59,19 +59,19 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
     sampleGross = isRejected ? 0 : Math.round(sRate * rawLots);
   } else if (exitMode === 'PRE_LISTING') {
     const pPrice = Number(sellPrice) || 0;
-    const gain = Math.max(0, pPrice - issuePrice);
-    sampleGross = isRejected ? 0 : Math.round(gain * rawQty);
+    const diff = pPrice > 0 ? (pPrice - issuePrice) : 0;
+    sampleGross = isRejected ? 0 : Math.round(diff * rawQty);
   } else {
     // MARKET
     const mPrice = Number(sellPrice) || 0;
-    const gain = Math.max(0, mPrice - issuePrice);
-    sampleGross = isRejected ? 0 : Math.round(gain * rawQty);
+    const diff = mPrice > 0 ? (mPrice - issuePrice) : 0;
+    sampleGross = isRejected ? 0 : Math.round(diff * rawQty);
   }
 
   const sampleClient40 = Math.round(sampleGross * 0.40);
   const sampleAdmin60 = Math.round(sampleGross * 0.60);
-  const sampleTds10 = Math.round(sampleClient40 * 0.10);
-  const sampleNetPayout = Math.max(0, sampleClient40 - sampleTds10);
+  const sampleTds10 = sampleClient40 > 0 ? Math.round(sampleClient40 * 0.10) : 0;
+  const sampleNetPayout = sampleClient40 > 0 ? (sampleClient40 - sampleTds10) : sampleClient40;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -349,23 +349,37 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                 <div style={{ background: 'var(--panel-bg)', padding: '10px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Gross Profit</span>
-                  <strong style={{ fontSize: '15px', color: 'var(--text-main)' }}>₹ {sampleGross.toLocaleString('en-IN')}</strong>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                    {sampleGross < 0 ? 'Realized Loss' : 'Gross Profit'}
+                  </span>
+                  <strong style={{ fontSize: '15px', color: sampleGross < 0 ? 'var(--danger-text)' : 'var(--text-main)' }}>
+                    {sampleGross < 0 ? `-₹${Math.abs(sampleGross).toLocaleString('en-IN')}` : `₹${sampleGross.toLocaleString('en-IN')}`}
+                  </strong>
                 </div>
 
                 <div style={{ background: 'var(--panel-bg)', padding: '10px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Customer 40%</span>
-                  <strong style={{ fontSize: '15px', color: 'var(--warning)' }}>₹ {sampleClient40.toLocaleString('en-IN')}</strong>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                    {sampleClient40 < 0 ? 'Customer Loss (40%)' : 'Customer 40%'}
+                  </span>
+                  <strong style={{ fontSize: '15px', color: sampleClient40 < 0 ? 'var(--danger-text)' : 'var(--warning)' }}>
+                    {sampleClient40 < 0 ? `-₹${Math.abs(sampleClient40).toLocaleString('en-IN')}` : `₹${sampleClient40.toLocaleString('en-IN')}`}
+                  </strong>
                 </div>
 
                 <div style={{ background: 'var(--panel-bg)', padding: '10px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>10% TDS Withheld</span>
-                  <strong style={{ fontSize: '15px', color: 'var(--danger-text)' }}>₹ {sampleTds10.toLocaleString('en-IN')}</strong>
+                  <strong style={{ fontSize: '15px', color: sampleTds10 > 0 ? 'var(--warning)' : 'var(--text-dim)' }}>
+                    {sampleTds10 > 0 ? `₹${sampleTds10.toLocaleString('en-IN')}` : '₹0 (No TDS)'}
+                  </strong>
                 </div>
 
                 <div style={{ background: 'var(--panel-bg)', padding: '10px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Net Client Payout</span>
-                  <strong style={{ fontSize: '15px', color: 'var(--success-text)' }}>₹ {sampleNetPayout.toLocaleString('en-IN')}</strong>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                    {sampleNetPayout < 0 ? 'Net Loss Settlement' : 'Net Client Payout'}
+                  </span>
+                  <strong style={{ fontSize: '15px', color: sampleNetPayout < 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>
+                    {sampleNetPayout < 0 ? `-₹${Math.abs(sampleNetPayout).toLocaleString('en-IN')}` : `₹${sampleNetPayout.toLocaleString('en-IN')}`}
+                  </strong>
                 </div>
               </div>
             </div>
