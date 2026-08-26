@@ -18,7 +18,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
   const [priceMin, setPriceMin] = useState(100);
   const [priceMax, setPriceMax] = useState(120);
   const [lotSize, setLotSize] = useState(50);
-  const [issueSize, setIssueSize] = useState('');
   const [status, setStatus] = useState('open');
   const [gainEst, setGainEst] = useState('+₹150/sh Est.');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +32,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       setPriceMin(ipoToEdit.price_band_min || 100);
       setPriceMax(ipoToEdit.price_band_max || 120);
       setLotSize(ipoToEdit.lot_size || 50);
-      setIssueSize(ipoToEdit.issue_size || '');
       setStatus(ipoToEdit.status || 'open');
       setGainEst(ipoToEdit.gain_est || '+₹150/sh Est.');
     } else {
@@ -44,7 +42,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
       setPriceMin(100);
       setPriceMax(120);
       setLotSize(50);
-      setIssueSize('');
       setStatus('open');
       setGainEst('+₹150/sh Est.');
     }
@@ -336,17 +333,6 @@ export default function AddIpoModal({ isOpen, onClose, onSuccess, ipoToEdit = nu
                     placeholder="e.g. +₹185 (41%)"
                     value={gainEst}
                     onChange={(e) => setGainEst(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Issue Size (₹ Cr)</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. ₹2,830 Cr"
-                    value={issueSize}
-                    onChange={(e) => setIssueSize(e.target.value)}
                   />
                 </div>
               </div>
