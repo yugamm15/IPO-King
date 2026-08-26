@@ -30,6 +30,7 @@ import {
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
 import AddApplicationModal from '../components/AddApplicationModal.jsx';
 import PreListingExitModal from '../components/PreListingExitModal.jsx';
+import IndividualExitModal from '../components/IndividualExitModal.jsx';
 import IpoSelectorDropdown from '../components/IpoSelectorDropdown.jsx';
 import Pagination from '../components/Pagination.jsx';
 import ActionDropdown from '../components/ActionDropdown.jsx';
@@ -65,6 +66,7 @@ export default function Applications({ showConfirm }) {
   const [partialModalApp, setPartialModalApp] = useState(null);
   const [isPreListingModalOpen, setIsPreListingModalOpen] = useState(false);
   const [preListingTargetApps, setPreListingTargetApps] = useState(null);
+  const [individualExitApp, setIndividualExitApp] = useState(null);
 
   const loadData = async (force = false) => {
     if (!applications || applications.length === 0) {
@@ -701,7 +703,7 @@ export default function Applications({ showConfirm }) {
                     <td>
                       <strong>{lotsVal} Lots</strong> <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>({qtyVal} sh)</span>
                     </td>
-                    <td>
+                    <td onClick={() => setIndividualExitApp(row)} style={{ cursor: 'pointer' }} title="Click to enter individual custom sell price">
                       {exitModeStr === 'KOSTAK' ? (
                         <span className="badge badge-purple">
                           <Tag size={11} /> KOSTAK (₹{row.kostak_rate || row.exit_price})
@@ -714,12 +716,15 @@ export default function Applications({ showConfirm }) {
                         <span className="badge badge-success">
                           <TrendingUp size={11} /> OFF-MKT (₹{row.exit_price})
                         </span>
+                      ) : row.exit_price > 0 ? (
+                        <span className="badge badge-teal">
+                          <TrendingUp size={11} /> SOLD @ ₹{row.exit_price}
+                        </span>
                       ) : (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Market Listing</span>
                       )}
                     </td>
                     <td>
-                      {/* Interactive Status Selector */}
                       <select
                         className="input-field"
                         value={statusVal}
@@ -751,9 +756,14 @@ export default function Applications({ showConfirm }) {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {/* Watermelon Dropdown-Menu-4 for Application Actions */}
                       <ActionDropdown
                         items={[
+                          {
+                            icon: TrendingUp,
+                            label: 'Custom Sell Price',
+                            description: 'Enter individual exit/sell price',
+                            onClick: () => setIndividualExitApp(row)
+                          },
                           {
                             icon: Zap,
                             label: 'Pre-Listing Exit',
@@ -800,16 +810,19 @@ export default function Applications({ showConfirm }) {
         />
       </div>
 
-      {/* Add Customer Application Modal */}
-      <AddApplicationModal
-        isOpen={isAddBidModalOpen}
-        onClose={() => setIsAddBidModalOpen(false)}
-        ipos={ipos}
-        selectedIpoId={selectedIpoId !== 'All' ? selectedIpoId : null}
-        onSuccess={() => {
-          loadData();
-        }}
-      />
+      {/* Add New IPO Bid Modal */}
+      {isAddBidModalOpen && (
+        <AddApplicationModal
+          isOpen={isAddBidModalOpen}
+          targetIpo={activeSelectedIpo}
+          ipos={ipos}
+          onClose={() => setIsAddBidModalOpen(false)}
+          onSuccess={() => {
+            setIsAddBidModalOpen(false);
+            loadData(true);
+          }}
+        />
+      )}
 
       {/* Quick Mark Listed Modal */}
       {listingModalIpo && (
@@ -826,7 +839,7 @@ export default function Applications({ showConfirm }) {
                 <input
                   type="number"
                   className="input-field"
-                  placeholder="e.g. 565"
+                  placeholder="e.g. 245"
                   value={customListingPrice}
                   onChange={(e) => setCustomListingPrice(e.target.value)}
                   style={{ height: '42px', fontSize: '16px', fontWeight: 700 }}
@@ -837,25 +850,25 @@ export default function Applications({ showConfirm }) {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setListingModalIpo(null)}>Cancel</button>
-                <button type="submit" className="btn btn-teal">Save Listing Gain</button>
+                <button type="submit" className="btn btn-teal">Save Listing & Settle</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Partial Allotment Allocated Shares Modal */}
+      {/* Partial Allotment Modal */}
       {partialModalApp && (
         <div className="modal-overlay" onClick={() => setPartialModalApp(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px', padding: '24px' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '6px', color: 'var(--text-main)' }}>Partial Allotment Details</h3>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px', padding: '24px' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '8px', color: 'var(--text-main)' }}>Partial Share Allocation</h3>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Enter allocated quantity for <strong>{partialModalApp.app.customer_name}</strong> (Applied: {partialModalApp.totalQty} shares)
+              Specify allocated shares for <strong>{partialModalApp.customerName}</strong> in <strong>{partialModalApp.ipoName}</strong> (Applied: {partialModalApp.totalQty} shares)
             </p>
 
-            <form onSubmit={handleConfirmPartialAllotment}>
+            <form onSubmit={handlePartialSubmit}>
               <div style={{ marginBottom: '16px' }}>
-                <label className="input-label">Allocated Shares / Quantity *</label>
+                <label className="input-label">Allotted Share Quantity *</label>
                 <input
                   type="number"
                   min="1"
@@ -892,6 +905,19 @@ export default function Applications({ showConfirm }) {
           onSuccess={() => {
             setIsPreListingModalOpen(false);
             setPreListingTargetApps(null);
+            loadData(true);
+          }}
+        />
+      )}
+
+      {/* Individual Application Custom Exit Modal */}
+      {individualExitApp && (
+        <IndividualExitModal
+          isOpen={Boolean(individualExitApp)}
+          app={individualExitApp}
+          onClose={() => setIndividualExitApp(null)}
+          onSuccess={() => {
+            setIndividualExitApp(null);
             loadData(true);
           }}
         />

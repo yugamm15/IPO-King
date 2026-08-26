@@ -217,3 +217,245 @@ export function downloadPayoutVoucherPdf(row) {
   const cleanFileName = `voucher_${row.txn_id.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
   doc.save(cleanFileName);
 }
+
+export function downloadCustomerPassbookPdf(customer, entries = []) {
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 12;
+  const tableWidth = pageWidth - marginX * 2;
+
+  // Header Banner
+  doc.setFillColor(4, 47, 46); // Hero-11 Deep Teal
+  doc.rect(0, 0, pageWidth, 24, 'F');
+
+  doc.setTextColor(250, 247, 242);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('IPO KING — Customer Statement & Passbook Ledger', marginX, 15);
+
+  // Customer Summary Card
+  const custName = (customer.full_name || customer.name || 'Customer').trim();
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Account Holder: ${custName}`, marginX, 33);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Customer ID: #${customer.customer_no || '—'}   |   Code: ${customer.code || '—'}   |   PAN: ${customer.pan_number || '—'}   |   DPID: ${customer.dpid || '—'}`, marginX, 39);
+  doc.text(`Bank: ${customer.bank_name || '—'}   |   A/C: ${customer.bank_account_no || '—'}   |   Available Balance: Rs. ${Number(customer.balance || 0).toLocaleString('en-IN')}`, marginX, 45);
+
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.5);
+  doc.line(marginX, 49, marginX + tableWidth, 49);
+
+  let currentY = 54;
+
+  // Table Headers
+  doc.setFillColor(241, 245, 249);
+  doc.rect(marginX, currentY, tableWidth, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+
+  doc.text('DATE', marginX + 3, currentY + 5.5);
+  doc.text('IPO / TRANSACTION DETAILS', marginX + 28, currentY + 5.5);
+  doc.text('TYPE', marginX + 90, currentY + 5.5);
+  doc.text('CREDIT (RS)', marginX + 135, currentY + 5.5);
+  doc.text('DEBIT (RS)', marginX + 162, currentY + 5.5);
+
+  currentY += 8;
+
+  if (!entries || entries.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(148, 163, 184);
+    doc.text('No historical transaction records found for this account.', marginX + 4, currentY + 10);
+  } else {
+    entries.forEach((item, idx) => {
+      if (currentY > pageHeight - 25) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(marginX, currentY, tableWidth, 7, 'F');
+      }
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+
+      const dStr = item.date ? new Date(item.date).toLocaleDateString('en-IN') : '—';
+      doc.text(dStr, marginX + 3, currentY + 4.8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(String(item.scrip || 'IPO Offering').substring(0, 32), marginX + 28, currentY + 4.8);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(String(item.type || '—').substring(0, 24), marginX + 90, currentY + 4.8);
+
+      // Credit (Green)
+      doc.setFont('helvetica', 'bold');
+      if (item.credit > 0) {
+        doc.setTextColor(16, 185, 129);
+        doc.text(`+Rs. ${item.credit.toLocaleString('en-IN')}`, marginX + 135, currentY + 4.8);
+      } else {
+        doc.setTextColor(148, 163, 184);
+        doc.text('—', marginX + 135, currentY + 4.8);
+      }
+
+      // Debit (Red)
+      if (item.debit > 0) {
+        doc.setTextColor(220, 38, 38);
+        doc.text(`-Rs. ${item.debit.toLocaleString('en-IN')}`, marginX + 162, currentY + 4.8);
+      } else {
+        doc.setTextColor(148, 163, 184);
+        doc.text('—', marginX + 162, currentY + 4.8);
+      }
+
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.2);
+      doc.line(marginX, currentY + 7, marginX + tableWidth, currentY + 7);
+
+      currentY += 7;
+    });
+  }
+
+  // Footer Note
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Computer-generated passbook statement. Valid for tax audit and banking reconciliation.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+  const cleanFileName = `passbook_${custName.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
+  doc.save(cleanFileName);
+}
+
+export function downloadJainamStcgPdf(stcgRows = [], summary = {}) {
+  const doc = new jsPDF('l', 'mm', 'a4'); // Landscape format for wide financial table
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 12;
+  const tableWidth = pageWidth - marginX * 2;
+
+  // Header Banner
+  doc.setFillColor(4, 47, 46); // #042F2E Deep Imperial Teal
+  doc.rect(0, 0, pageWidth, 22, 'F');
+
+  doc.setTextColor(250, 247, 242);
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.text('IPO KING — Short-Term Capital Gains (STCG) P&L Statement', marginX, 14);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(204, 251, 241);
+  doc.text(`Jainam Format Tax & Audit Report   |   Generated: ${new Date().toLocaleString('en-IN')}`, pageWidth - marginX, 14, { align: 'right' });
+
+  // Summary Metrics Banner
+  let currentY = 28;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(marginX, currentY, tableWidth, 14, 2, 2, 'F');
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(marginX, currentY, tableWidth, 14, 2, 2, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(30, 41, 59);
+
+  const totalBuy = summary.totalBuyValue || 0;
+  const totalSell = summary.totalSellTurnover || 0;
+  const totalGrossStcg = summary.totalGrossStcg || 0;
+  const totalClient40 = summary.totalClientProfit || 0;
+  const totalTds10 = summary.totalTds || 0;
+  const totalNet = summary.totalNetPayout || 0;
+
+  doc.text(`Total Buy Value: Rs. ${totalBuy.toLocaleString('en-IN')}`, marginX + 6, currentY + 8.5);
+  doc.text(`Total Sell Turnover: Rs. ${totalSell.toLocaleString('en-IN')}`, marginX + 55, currentY + 8.5);
+  doc.text(`Gross STCG Gain: Rs. ${totalGrossStcg.toLocaleString('en-IN')}`, marginX + 115, currentY + 8.5);
+  doc.text(`Client 40% Share: Rs. ${totalClient40.toLocaleString('en-IN')}`, marginX + 175, currentY + 8.5);
+  doc.text(`10% TDS: Rs. ${totalTds10.toLocaleString('en-IN')}`, marginX + 225, currentY + 8.5);
+
+  currentY += 18;
+
+  // Table Headers
+  doc.setFillColor(241, 245, 249);
+  doc.rect(marginX, currentY, tableWidth, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(30, 41, 59);
+
+  doc.text('CLIENT NAME', marginX + 3, currentY + 5.5);
+  doc.text('PAN', marginX + 42, currentY + 5.5);
+  doc.text('IPO SCRIP', marginX + 66, currentY + 5.5);
+  doc.text('QTY', marginX + 115, currentY + 5.5);
+  doc.text('BUY VAL', marginX + 128, currentY + 5.5);
+  doc.text('SELL VAL', marginX + 155, currentY + 5.5);
+  doc.text('GROSS STCG', marginX + 185, currentY + 5.5);
+  doc.text('40% SHARE', marginX + 215, currentY + 5.5);
+  doc.text('10% TDS', marginX + 242, currentY + 5.5);
+  doc.text('NET PAYOUT', marginX + 264, currentY + 5.5);
+
+  currentY += 8;
+
+  stcgRows.forEach((row, idx) => {
+    if (currentY > pageHeight - 20) {
+      doc.addPage('l', 'a4');
+      currentY = 16;
+    }
+
+    if (idx % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(marginX, currentY, tableWidth, 6.5, 'F');
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(51, 65, 85);
+
+    doc.text(String(row.client_name || 'Customer').substring(0, 24), marginX + 3, currentY + 4.5);
+    doc.text(String(row.pan || '—'), marginX + 42, currentY + 4.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(row.scrip || 'IPO Offering').substring(0, 28), marginX + 66, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(row.qty || 1), marginX + 115, currentY + 4.5);
+    doc.text(`Rs. ${(row.buy_value || 0).toLocaleString('en-IN')}`, marginX + 128, currentY + 4.5);
+    doc.text(`Rs. ${(row.sell_turnover || 0).toLocaleString('en-IN')}`, marginX + 155, currentY + 4.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text(`Rs. ${(row.gross_stcg || 0).toLocaleString('en-IN')}`, marginX + 185, currentY + 4.5);
+
+    doc.setTextColor(217, 119, 6);
+    doc.text(`Rs. ${(row.client_40 || 0).toLocaleString('en-IN')}`, marginX + 215, currentY + 4.5);
+
+    doc.setTextColor(220, 38, 38);
+    doc.text(`Rs. ${(row.tds_10 || 0).toLocaleString('en-IN')}`, marginX + 242, currentY + 4.5);
+
+    doc.setTextColor(13, 148, 136);
+    doc.text(`Rs. ${(row.net_payout || 0).toLocaleString('en-IN')}`, marginX + 264, currentY + 4.5);
+
+    doc.setDrawColor(241, 245, 249);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, currentY + 6.5, marginX + tableWidth, currentY + 6.5);
+
+    currentY += 6.5;
+  });
+
+  // Footer Note
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Jainam Format Short-Term Capital Gains (STCG) Tax Computation Report. Verified & Audited.', pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+  const cleanFileName = `jainam_stcg_report_${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(cleanFileName);
+}
+

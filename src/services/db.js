@@ -696,6 +696,172 @@ export async function applyPreListingExitToApplications(applicationIds = [], mod
   }
 }
 
+export async function updateApplicationIndividualExit(applicationId, {
+  exit_price = 0,
+  exit_mode = 'MARKET',
+  kostak_rate = 0,
+  sauda_rate = 0,
+  allotment_status = 'Full Allotment'
+}) {
+  try {
+    const { data: app, error: appFetchErr } = await supabase
+      .from('applications')
+      .select('*, ipos(*)')
+      .eq('id', applicationId)
+      .single();
+
+    if (appFetchErr || !app) throw new Error('Application not found');
+
+    const ipoData = app.ipos || {};
+    const exitParams = {
+      exit_mode,
+      exit_price: Number(exit_price) || 0,
+      listing_price: Number(exit_price) || 0,
+      pre_listing_price: Number(exit_price) || 0,
+      kostak_rate: Number(kostak_rate) || 0,
+      sauda_rate: Number(sauda_rate) || 0
+    };
+
+    const metrics = calculateExitMetrics(exit_mode, exitParams, app, ipoData);
+    
+    // Update application
+    const payload = {
+      allotment_status,
+      exit_mode,
+      exit_price: metrics.exit_price,
+      kostak_rate: exitParams.kostak_rate,
+      sauda_rate: exitParams.sauda_rate,
+      profit_amount: metrics.profit_amount,
+      client_share_60: metrics.client_share_60,
+      admin_share_40: metrics.admin_share_40,
+      tds_10: metrics.tds_10,
+      net_payout: metrics.net_payout,
+      settlement_remarks: metrics.settlement_remarks
+    };
+
+    const { data: updatedApp, error: updateErr } = await supabase
+      .from('applications')
+      .update(payload)
+      .eq('id', applicationId)
+      .select('*')
+      .single();
+
+    if (updateErr) {
+      await supabase.from('applications').update({ allotment_status }).eq('id', applicationId);
+    }
+
+    // Upsert into ipo_allotments ledger
+    try {
+      await supabase.from('ipo_allotments').upsert([{
+        application_id: app.id,
+        customer_id: app.customer_id,
+        ipo_id: app.ipo_id,
+        applied_qty: Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+        allotted_qty: Number(app.allotted_quantity) || Number(app.quantity) || (Number(ipoData.lot_size) || 1),
+        allotment_price: Number(ipoData.price_band_max) || Number(ipoData.price_band_min) || 100,
+        listing_price: metrics.exit_price,
+        total_profit: metrics.profit_amount,
+        customer_profit_share_40pct: metrics.client_share_60,
+        company_profit_share_60pct: metrics.admin_share_40,
+        tds_amount_10pct: metrics.tds_10,
+        net_payout: metrics.net_payout,
+        payment_status: 'Pending'
+      }], { onConflict: 'application_id' });
+    } catch (_) {}
+
+    invalidateDbCache();
+    return updatedApp || { ...app, ...payload };
+  } catch (err) {
+    console.error('Error updating individual application exit:', err);
+    throw err;
+  }
+}
+
+export async function fetchCustomerPassbookLedger(customerId) {
+  try {
+    const { data: apps, error } = await supabase
+      .from('applications')
+      .select('*, ipos(ipo_name, symbol, price_band_max, lot_size)')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+
+    if (error || !apps) return [];
+
+    const ledger = [];
+    apps.forEach((a) => {
+      const ipoName = a.ipos?.ipo_name || a.ipo_name || 'IPO Offering';
+      const bidAmt = Number(a.bid_amount) || 15000;
+      const profit = Number(a.profit_amount) || 0;
+      const clientShare = Number(a.client_share_60) || 0;
+      const tds = Number(a.tds_10) || 0;
+      const status = String(a.allotment_status || 'Pending');
+      const isRejected = status.toLowerCase().includes('reject') || status.toLowerCase().includes('not') || status.toLowerCase().includes('unallotted');
+
+      // Entry 1: Bid Block
+      ledger.push({
+        id: `bid_${a.id}`,
+        date: a.created_at || new Date().toISOString(),
+        scrip: ipoName,
+        type: 'IPO Bid (Mandate Blocked)',
+        lots: a.lots_applied || 1,
+        debit: 0,
+        credit: 0,
+        amount: bidAmt,
+        status: status,
+        remarks: `Bid for ${a.lots_applied || 1} lot(s)`
+      });
+
+      if (isRejected) {
+        ledger.push({
+          id: `ref_${a.id}`,
+          date: a.updated_at || a.created_at || new Date().toISOString(),
+          scrip: ipoName,
+          type: 'Mandate Refund (Unallotted)',
+          lots: a.lots_applied || 1,
+          debit: 0,
+          credit: 0,
+          amount: bidAmt,
+          status: 'Refunded',
+          remarks: 'Mandate released back to bank account'
+        });
+      } else if (profit > 0 || clientShare > 0) {
+        ledger.push({
+          id: `prof_${a.id}`,
+          date: a.updated_at || a.created_at || new Date().toISOString(),
+          scrip: ipoName,
+          type: `Profit Share (+40% - ${a.exit_mode || 'Market'})`,
+          lots: a.lots_applied || 1,
+          debit: 0,
+          credit: clientShare,
+          amount: clientShare,
+          status: 'Credited',
+          remarks: `Gross Profit ₹${profit.toLocaleString('en-IN')} (Exit @ ₹${a.exit_price || 0})`
+        });
+
+        if (tds > 0) {
+          ledger.push({
+            id: `tds_${a.id}`,
+            date: a.updated_at || a.created_at || new Date().toISOString(),
+            scrip: ipoName,
+            type: 'TDS Withholding (-10%)',
+            lots: a.lots_applied || 1,
+            debit: tds,
+            credit: 0,
+            amount: tds,
+            status: 'Tax Deducted',
+            remarks: `10% TDS on Client Profit ₹${clientShare.toLocaleString('en-IN')}`
+          });
+        }
+      }
+    });
+
+    return ledger;
+  } catch (err) {
+    console.error('Error fetching customer passbook ledger:', err);
+    return [];
+  }
+}
+
 export async function updateIpoListingStatus(ipoId, listingPrice) {
   return applyPreListingExitToIpo(ipoId, 'MARKET', { listing_price: listingPrice });
 }
