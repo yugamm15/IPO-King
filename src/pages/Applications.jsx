@@ -15,7 +15,8 @@ import {
   Handshake,
   X,
   SlidersHorizontal,
-  Check
+  Check,
+  Building2
 } from 'lucide-react';
 import {
   supabase,
@@ -34,8 +35,8 @@ import Pagination from '../components/Pagination.jsx';
 import ActionDropdown from '../components/ActionDropdown.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
-export default function Applications({ onOpenExcelModal }) {
-  const { showToast, showConfirm } = useToast();
+export default function Applications({ showConfirm }) {
+  const { showToast } = useToast();
 
   const [applications, setApplications] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ipoking_cache_applications')) || []; } catch(e) { return []; }
@@ -51,6 +52,7 @@ export default function Applications({ onOpenExcelModal }) {
   const [selectedIpoId, setSelectedIpoId] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [bankFilter, setBankFilter] = useState('All');
 
   // Pagination-2 State
   const [currentPage, setCurrentPage] = useState(1);
@@ -257,13 +259,31 @@ export default function Applications({ onOpenExcelModal }) {
     }
   };
 
-  // Filter applications by selected IPO, status, search query
+  // Extract unique banks dynamically from applications
+  const uniqueBanks = useMemo(() => {
+    const bSet = new Set();
+    applications.forEach((a) => {
+      const b = a.bank_name || a.customers?.bank_name;
+      if (b && b !== '—' && b !== 'null' && b !== 'undefined' && b.trim() !== '') {
+        bSet.add(b.trim());
+      }
+    });
+    return Array.from(bSet).sort();
+  }, [applications]);
+
+  // Filter applications by selected IPO, bank, status, search query
   const filteredApps = useMemo(() => {
     return applications.filter((app) => {
       // IPO filter
       if (selectedIpoId !== 'All') {
         const matchIpo = String(app.ipo_id) === String(selectedIpoId) || String(app.ipo_name).toLowerCase() === String(activeSelectedIpo?.ipo_name).toLowerCase();
         if (!matchIpo) return false;
+      }
+
+      // Bank filter
+      if (bankFilter !== 'All') {
+        const appBank = String(app.bank_name || app.customers?.bank_name || '').toLowerCase();
+        if (!appBank.includes(bankFilter.toLowerCase())) return false;
       }
 
       // Status filter
@@ -275,16 +295,18 @@ export default function Applications({ onOpenExcelModal }) {
       const panVal = String(app.pan || app.pan_number || '');
       const ipoVal = String(app.ipo_name || app.ipo_applied || '');
       const custName = String(app.customer_name || '');
+      const bankVal = String(app.bank_name || '');
 
       const queryMatch =
         !query ||
         custName.toLowerCase().includes(query) ||
         panVal.toLowerCase().includes(query) ||
-        ipoVal.toLowerCase().includes(query);
+        ipoVal.toLowerCase().includes(query) ||
+        bankVal.toLowerCase().includes(query);
 
       return statusMatch && queryMatch;
     });
-  }, [applications, selectedIpoId, activeSelectedIpo, statusFilter, searchQuery]);
+  }, [applications, selectedIpoId, activeSelectedIpo, bankFilter, statusFilter, searchQuery]);
 
   // Paginated applications
   const paginatedApps = useMemo(() => {
@@ -318,11 +340,11 @@ export default function Applications({ onOpenExcelModal }) {
               IPO Applications Ledger
             </h1>
             <span className="badge badge-teal">
-              {applications.length} Bids Logged
+              {filteredApps.length} Bids Filtered
             </span>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-muted)' }}>
-            Real-time multi-account IPO bid dispatching, allotment tracking, and pre-listing exit manager.
+            Real-time multi-account IPO bid dispatching, bank-wise filtering, and pre-listing exit manager.
           </p>
         </div>
 
@@ -332,13 +354,13 @@ export default function Applications({ onOpenExcelModal }) {
             type="button"
             className="btn btn-secondary"
             onClick={() => {
-              setPreListingTargetApps(null);
+              setPreListingTargetApps(bankFilter !== 'All' ? filteredApps : null);
               setIsPreListingModalOpen(true);
             }}
             title="Pre-Listing Exit / Kostak / Subject to Sauda"
             style={{ borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 700, padding: '9px 16px' }}
           >
-            <Zap size={15} /> ⚡ Pre-Listing Exit
+            <Zap size={15} /> ⚡ Pre-Listing Exit {bankFilter !== 'All' ? `(${bankFilter}: ${filteredApps.length} Bids)` : ''}
           </button>
           <button
             type="button"
@@ -529,42 +551,93 @@ export default function Applications({ onOpenExcelModal }) {
           })}
         </div>
 
-        {/* Search Field */}
-        <div style={{ position: 'relative', minWidth: '280px', maxWidth: '380px', flex: '1 1 300px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
-          <input
-            type="text"
-            className="input-field"
-            placeholder="Search by customer name, PAN, or IPO..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            style={{
-              paddingLeft: '38px',
-              paddingRight: searchQuery ? '36px' : '14px',
-              height: '38px',
-              fontSize: '13.5px',
-              borderRadius: '12px'
-            }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
+        {/* Right Search & Bank Filters */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
+          {/* Bank Wise Filter Dropdown */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '12px',
+            padding: '0 12px',
+            height: '38px'
+          }}>
+            <Building2 size={16} style={{ color: 'var(--brand-accent)', flexShrink: 0 }} />
+            <select
+              value={bankFilter}
+              onChange={(e) => {
+                setBankFilter(e.target.value);
                 setCurrentPage(1);
               }}
               style={{
-                position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text-main)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                outline: 'none',
+                minWidth: '150px'
               }}
-              title="Clear search"
             >
-              <X size={14} />
-            </button>
-          )}
+              <option value="All">🏦 All Banks ({applications.length})</option>
+              {uniqueBanks.map((b) => {
+                const count = applications.filter((a) => {
+                  if (selectedIpoId !== 'All') {
+                    const matchIpo = String(a.ipo_id) === String(selectedIpoId) || String(a.ipo_name).toLowerCase() === String(activeSelectedIpo?.ipo_name).toLowerCase();
+                    if (!matchIpo) return false;
+                  }
+                  const ab = String(a.bank_name || a.customers?.bank_name || '');
+                  return ab.toLowerCase() === b.toLowerCase();
+                }).length;
+                return (
+                  <option key={b} value={b}>
+                    {b} ({count} bids)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Search Field */}
+          <div style={{ position: 'relative', minWidth: '240px', maxWidth: '320px', flex: '1 1 240px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Search customer, PAN, IPO, bank..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                paddingLeft: '38px',
+                paddingRight: searchQuery ? '36px' : '14px',
+                height: '38px',
+                fontSize: '13.5px',
+                borderRadius: '12px'
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                style={{
+                  position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
+                }}
+                title="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -575,7 +648,7 @@ export default function Applications({ onOpenExcelModal }) {
             <tr>
               <th>Customer Name</th>
               <th>PAN Number</th>
-              <th>Bank A/C Ref</th>
+              <th>Bank &amp; Account</th>
               <th>IPO Applied</th>
               <th>Lots / Qty</th>
               <th>Exit Strategy</th>
@@ -611,7 +684,12 @@ export default function Applications({ onOpenExcelModal }) {
                       {row.dpid && <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>DPID: {row.dpid}</div>}
                     </td>
                     <td><code style={{ background: 'rgba(4, 47, 46, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--primary)' }}>{panVal}</code></td>
-                    <td><span style={{ fontSize: '12.5px' }}>{row.bank_account || '—'}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>{row.bank_name || 'Bank'}</strong>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{row.bank_account || '—'}</span>
+                      </div>
+                    </td>
                     <td>
                       <strong style={{ color: 'var(--primary)' }}>{ipoVal}</strong>
                       {row.ipo_status === 'listed' && (

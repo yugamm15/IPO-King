@@ -131,7 +131,7 @@ export async function fetchApplicationsLedger(force = false) {
     const res = await queryWithTimeout(
       supabase
         .from('applications')
-        .select('*, customers(full_name, pan_number, bank_account_no, dpid), ipos(ipo_name, status, listing_date, price_band_max)')
+        .select('*, customers(full_name, pan_number, bank_account_no, bank_name, dpid), ipos(ipo_name, status, listing_date, price_band_max)')
         .order('created_at', { ascending: false }),
       3000
     );
@@ -146,6 +146,8 @@ export async function fetchApplicationsLedger(force = false) {
       ipo_id: item.ipo_id,
       customer_name: item.customers?.full_name || 'Customer',
       pan: item.customers?.pan_number || '—',
+      bank_name: item.customers?.bank_name || item.bank_name || '—',
+      bank_account: item.customers?.bank_account_no || '—',
       ipo_name: item.ipos?.ipo_name || 'IPO Offering',
       lots_applied: item.lots_applied || item.quantity || 1,
       bid_amount: item.bid_amount || 15000,
@@ -161,7 +163,6 @@ export async function fetchApplicationsLedger(force = false) {
       tds_10: Number(item.tds_10) || 0,
       net_payout: Number(item.net_payout) || 0,
       settlement_remarks: item.settlement_remarks || '',
-      bank_account: item.customers?.bank_account_no || '—',
       dpid: item.customers?.dpid || '—',
       ipo_status: item.ipos?.status || 'open',
       listing_date: item.ipos?.listing_date || '—'
