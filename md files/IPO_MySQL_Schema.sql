@@ -57,13 +57,12 @@ CREATE TABLE IF NOT EXISTS customers (
     
     -- System Fields
     aadhar_number VARCHAR(20),
+    birthdate DATE,
     bank_name VARCHAR(100),
     ifsc_code VARCHAR(20),
     demat_account_no VARCHAR(50),
-    address TEXT,
-    city VARCHAR(50),
-    state VARCHAR(50),
-    pincode VARCHAR(10),
+    -- Financial & Profit Sharing Configuration
+    profit_share_percentage DECIMAL(5, 2) DEFAULT 40.00,  -- Custom customer profit share percentage (Default 40.00%)
     
     -- Status Fields
     kyc_status ENUM('pending', 'verified', 'rejected') DEFAULT 'pending',

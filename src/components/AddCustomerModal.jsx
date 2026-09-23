@@ -13,7 +13,7 @@ import {
   Lock,
   CreditCard
 } from 'lucide-react';
-import { supabase, fetchBanks } from '../services/db';
+import { supabase, fetchBanks, getSystemSettings } from '../services/db';
 
 export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustomerNo, initialData }) {
   const isEditMode = Boolean(initialData);
@@ -21,11 +21,15 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
   const [availableBanks, setAvailableBanks] = useState([]);
 
+  const defaultProfitPct = String(getSystemSettings().default_customer_profit_pct || 40);
+
   const [formData, setFormData] = useState({
     customer_no: '',
     full_name: '',
     ca_number: '',
     pan_number: '',
+    aadhaar_number: '',
+    birthdate: '',
     dpid: '',
     bank_name: '',
     bank_account_no: '',
@@ -39,6 +43,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
     phone_other: '',
     return_amount: '0',
     tds_remarks: '',
+    profit_share_percentage: defaultProfitPct,
     kyc_status: 'Verified'
   });
 
@@ -82,11 +87,16 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
   useEffect(() => {
     if (initialData) {
+      const rawDob = initialData.birthdate || initialData.date_of_birth || initialData.dob || '';
+      const formattedDob = rawDob ? String(rawDob).split('T')[0] : '';
+
       setFormData({
         customer_no: initialData.customer_no || '',
         full_name: initialData.full_name || initialData.name || '',
         ca_number: initialData.ca_number || '',
         pan_number: initialData.pan_number || '',
+        aadhaar_number: initialData.aadhaar_number || initialData.aadhar_number || initialData.aadhar_card_number || '',
+        birthdate: formattedDob,
         dpid: initialData.dpid || '',
         bank_name: initialData.bank_name || '',
         bank_account_no: initialData.bank_account_no || '',
@@ -100,6 +110,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         phone_other: initialData.phone_other || '',
         return_amount: initialData.return_amount !== undefined ? String(initialData.return_amount) : '0',
         tds_remarks: initialData.tds_remarks || '',
+        profit_share_percentage: initialData.profit_share_percentage !== undefined && initialData.profit_share_percentage !== null ? String(initialData.profit_share_percentage) : '40',
         kyc_status: initialData.kyc_status || 'Verified'
       });
 
@@ -117,7 +128,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         ...prev,
         customer_no: targetNo,
         code: prev.code || `IPO-${String(targetNo).padStart(3, '0')}`,
-        password_encrypted: prev.password_encrypted || 'Arham'
+        password_encrypted: prev.password_encrypted || 'Arham',
+        profit_share_percentage: prev.profit_share_percentage || '40'
       }));
     }
   }, [initialData, nextCustomerNo]);
@@ -139,6 +151,12 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         }
       }
       setFormData((prev) => ({ ...prev, pan_number: cleanPan }));
+      return;
+    }
+
+    if (name === 'aadhaar_number') {
+      const digitsOnly = value.replace(/\D/g, '').slice(0, 12);
+      setFormData((prev) => ({ ...prev, aadhaar_number: digitsOnly }));
       return;
     }
 
@@ -247,6 +265,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         name: formData.full_name.trim(),
         ca_number: formData.ca_number.trim() || null,
         pan_number: formData.pan_number.trim().toUpperCase(),
+        aadhaar_number: formData.aadhaar_number ? formData.aadhaar_number.replace(/\D/g, '') : null,
+        birthdate: formData.birthdate || null,
         dpid: formData.dpid.trim() || null,
         bank_name: formData.bank_name.trim() || null,
         bank_account_no: formData.bank_account_no.trim() || null,
@@ -260,6 +280,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         phone_other: formData.phone_other.trim() || null,
         return_amount: parseFloat(formData.return_amount) || 0,
         tds_remarks: formData.tds_remarks.trim() || null,
+        profit_share_percentage: parseFloat(formData.profit_share_percentage) || 40,
         beneficiary_name: beneficiaryString || null,
         kyc_status: formData.kyc_status || 'Verified',
         address: docJsonString
@@ -290,6 +311,22 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         const res = await supabase.from('customers').insert([payload]).select();
         data = res?.data;
         error = res?.error;
+      }
+
+      if (error && (String(error.message || '').includes('profit_share_percentage') || String(error.message || '').includes('aadhaar_number') || String(error.message || '').includes('birthdate'))) {
+        const safePayload = { ...payload };
+        if (String(error.message || '').includes('profit_share_percentage')) delete safePayload.profit_share_percentage;
+        if (String(error.message || '').includes('aadhaar_number')) delete safePayload.aadhaar_number;
+        if (String(error.message || '').includes('birthdate')) delete safePayload.birthdate;
+        if (isEditMode) {
+          const res = await supabase.from('customers').update(safePayload).eq('id', initialData?.id).select();
+          data = res?.data;
+          error = res?.error;
+        } else {
+          const res = await supabase.from('customers').insert([safePayload]).select();
+          data = res?.data;
+          error = res?.error;
+        }
       }
 
       if (error) {
@@ -525,7 +562,34 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">5. DPID (DEMAT A/C)</label>
+                <label className="input-label">5. AADHAAR CARD NO. 🪪</label>
+                <input
+                  type="text"
+                  name="aadhaar_number"
+                  maxLength={12}
+                  placeholder="e.g. 5678 1234 9012"
+                  value={formData.aadhaar_number}
+                  onChange={handleChange}
+                  className="input-field"
+                  style={{ letterSpacing: '0.05em', fontWeight: 600 }}
+                />
+              </div>
+
+              <div>
+                <label className="input-label">6. BIRTHDATE (DOB) 📅</label>
+                <input
+                  type="date"
+                  name="birthdate"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={formData.birthdate}
+                  onChange={handleChange}
+                  className="input-field"
+                  style={{ cursor: 'pointer' }}
+                />
+              </div>
+
+              <div>
+                <label className="input-label">7. DPID (DEMAT A/C)</label>
                 <input
                   type="text"
                   name="dpid"
@@ -538,7 +602,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">6. BANK NAME 🏦</label>
+                <label className="input-label">8. BANK NAME 🏦</label>
                 <select
                   name="bank_name"
                   value={formData.bank_name}
@@ -556,7 +620,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">7. Bank A/c No.</label>
+                <label className="input-label">9. Bank A/c No.</label>
                 <input
                   type="text"
                   name="bank_account_no"
@@ -568,7 +632,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">8. Login ID</label>
+                <label className="input-label">10. Login ID</label>
                 <input
                   type="text"
                   name="login_id"
@@ -580,7 +644,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">9. ARHAM (Password)</label>
+                <label className="input-label">11. ARHAM (Password)</label>
                 <input
                   type="text"
                   name="password_encrypted"
@@ -592,7 +656,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">10. CODE (Customer Code)</label>
+                <label className="input-label">12. CODE (Customer Code)</label>
                 <input
                   type="text"
                   name="code"
@@ -605,7 +669,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">11. Mobile Number</label>
+                <label className="input-label">13. Mobile Number</label>
                 <input
                   type="text"
                   name="mobile_number"
@@ -617,7 +681,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">12. BALANCE (₹)</label>
+                <label className="input-label">14. BALANCE (₹)</label>
                 <input
                   type="number"
                   name="balance"
@@ -629,7 +693,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">13. Alt Phone (Kono chhe)</label>
+                <label className="input-label">15. Alt Phone (Kono chhe)</label>
                 <input
                   type="text"
                   name="phone_alternate"
@@ -641,7 +705,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">14. EMAIL ADDRESS</label>
+                <label className="input-label">16. EMAIL ADDRESS</label>
                 <input
                   type="email"
                   name="email"
@@ -653,7 +717,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">15. Other Phone Number</label>
+                <label className="input-label">17. Other Phone Number</label>
                 <input
                   type="text"
                   name="phone_other"
@@ -665,7 +729,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">16. RETURN AMOUNT (₹)</label>
+                <label className="input-label">18. RETURN AMOUNT (₹)</label>
                 <input
                   type="number"
                   name="return_amount"
@@ -676,8 +740,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                 />
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
-                <label className="input-label">17. TDS REMARKS</label>
+              <div>
+                <label className="input-label">19. TDS REMARKS</label>
                 <input
                   type="text"
                   name="tds_remarks"
@@ -686,6 +750,30 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                   onChange={handleChange}
                   className="input-field"
                 />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="input-label" style={{ margin: 0 }}>20. PROFIT SHARE (%)</label>
+                  <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                    Treasury: {Math.max(0, 100 - (parseFloat(formData.profit_share_percentage) || 40))}%
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  name="profit_share_percentage"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  placeholder="40"
+                  value={formData.profit_share_percentage}
+                  onChange={handleChange}
+                  className="input-field"
+                  style={{ fontWeight: 700, color: 'var(--brand-accent)' }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                  Default is 40% (Editable per customer agreement)
+                </span>
               </div>
             </div>
           </div>

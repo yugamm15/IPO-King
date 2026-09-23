@@ -1,31 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, Landmark, Plus, Trash2, Search, CheckCircle, AlertTriangle, X, Copy, Check } from 'lucide-react';
-import { fetchBanks, createBank, deleteBank } from '../services/db';
+import {
+  Landmark,
+  Plus,
+  Trash2,
+  Search,
+  CheckCircle,
+  AlertTriangle,
+  X,
+  Sliders,
+  Percent,
+  Calculator,
+  ShieldCheck,
+  Save,
+  RotateCcw,
+  DollarSign,
+  TrendingUp,
+  Tag,
+  Briefcase
+} from 'lucide-react';
+import {
+  fetchBanks,
+  createBank,
+  deleteBank,
+  getSystemSettings,
+  fetchSystemSettings,
+  saveSystemSettings,
+  DEFAULT_SYSTEM_SETTINGS
+} from '../services/db';
 
 export default function Settings() {
+  const [activeTab, setActiveTab] = useState('financial'); // 'financial' | 'banks'
+
+  // Settings State
+  const [settings, setSettings] = useState(getSystemSettings());
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [simGrossProfit, setSimGrossProfit] = useState(10000);
+
+  // Bank Master State
   const [banks, setBanks] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingBanks, setIsLoadingBanks] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [newIfscPrefix, setNewIfscPrefix] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittingBank, setIsSubmittingBank] = useState(false);
+
+  // Toast State
   const [toastMsg, setToastMsg] = useState({ type: '', text: '' });
-  const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
+    loadSettingsData();
     loadBanks();
   }, []);
 
+  const loadSettingsData = async () => {
+    try {
+      const data = await fetchSystemSettings(true);
+      if (data) setSettings(data);
+    } catch (err) {
+      console.error('Error loading system settings:', err);
+    }
+  };
+
   const loadBanks = async () => {
-    setIsLoading(true);
+    setIsLoadingBanks(true);
     try {
       const data = await fetchBanks(true);
       setBanks(data || []);
     } catch (err) {
       console.error('Error loading banks:', err);
     } finally {
-      setIsLoading(false);
+      setIsLoadingBanks(false);
     }
   };
 
@@ -34,6 +79,50 @@ export default function Settings() {
     setTimeout(() => setToastMsg({ type: '', text: '' }), 4000);
   };
 
+  const handleSettingChange = (field, value) => {
+    setSettings((prev) => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'default_customer_profit_pct') {
+        const custVal = Math.min(100, Math.max(0, Number(value) || 0));
+        updated.default_customer_profit_pct = custVal;
+        updated.default_company_profit_pct = 100 - custVal;
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveSettings = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      await saveSystemSettings(settings);
+      showToast('System calculation settings saved & applied across application!');
+    } catch (err) {
+      console.error('Save settings error:', err);
+      showToast('Failed to save settings to cloud. Saved locally.', 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleResetSettings = () => {
+    if (window.confirm('Reset all financial calculations and initial defaults back to factory default values?')) {
+      setSettings(DEFAULT_SYSTEM_SETTINGS);
+      saveSystemSettings(DEFAULT_SYSTEM_SETTINGS);
+      showToast('Settings reset to system defaults.');
+    }
+  };
+
+  // Live Simulator Calculations
+  const simCustomerPct = Number(settings.default_customer_profit_pct) || 40;
+  const simCompanyPct = 100 - simCustomerPct;
+  const simCustGross = Math.round(simGrossProfit * (simCustomerPct / 100));
+  const simCompanyGross = simGrossProfit - simCustGross;
+  const simTdsRate = settings.enable_tds_deduction ? (Number(settings.default_tds_pct) || 10) / 100 : 0;
+  const simTdsAmt = simCustGross > 0 ? Math.round(simCustGross * simTdsRate) : 0;
+  const simNetPayout = simCustGross > 0 ? (simCustGross - simTdsAmt) : simCustGross;
+
+  // Bank Handlers
   const handleAddBank = async (e) => {
     e.preventDefault();
     if (!newBankName.trim()) {
@@ -48,7 +137,7 @@ export default function Settings() {
       return;
     }
 
-    setIsSubmitting(true);
+    setIsSubmittingBank(true);
     try {
       const created = await createBank(trimmed, newIfscPrefix.trim());
       setBanks(prev => [...prev.filter(b => b.bank_name.toLowerCase() !== trimmed.toLowerCase()), created].sort((a, b) => a.bank_name.localeCompare(b.bank_name)));
@@ -59,7 +148,7 @@ export default function Settings() {
     } catch (err) {
       showToast(err.message || 'Failed to add bank.', 'error');
     } finally {
-      setIsSubmitting(false);
+      setIsSubmittingBank(false);
     }
   };
 
@@ -82,40 +171,76 @@ export default function Settings() {
     (b.ifsc_prefix || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const postgresSqlSnippet = `-- Create banks table in Supabase PostgreSQL
-CREATE TABLE IF NOT EXISTS banks (
-    id SERIAL PRIMARY KEY,
-    bank_name VARCHAR(150) UNIQUE NOT NULL,
-    ifsc_prefix VARCHAR(20),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-ALTER TABLE banks DISABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`;
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(postgresSqlSnippet);
-    setCopiedSql(true);
-    showToast('SQL Migration Query copied to clipboard!');
-    setTimeout(() => setCopiedSql(false), 3000);
-  };
-
   return (
-    <div className="page-content">
+    <div className="page-content" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '60px' }}>
 
-      {/* Header (Hero-11) */}
+      {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.03em' }}>
-            System Configuration & Bank Master
+            System Settings &amp; Defaults
           </h1>
-          <span className="badge badge-teal">Settings</span>
+          <span className="badge badge-teal">Configuration</span>
         </div>
         <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: 'var(--text-muted)' }}>
-          Manage global financial parameters, cloud database connectors, and customer banking catalogs.
+          Configure global financial sharing ratios, TDS tax deduction rates, IPO defaults, and bank master catalogs.
         </p>
       </div>
 
+      {/* Navigation Tabs */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '24px',
+        borderBottom: '1px solid var(--panel-border)',
+        paddingBottom: '8px'
+      }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('financial')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '10px',
+            fontSize: '13.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            border: 'none',
+            background: activeTab === 'financial' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'financial' ? '#ffffff' : 'var(--text-muted)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Percent size={16} />
+          Profit Split &amp; Financial Defaults
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('banks')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '10px',
+            fontSize: '13.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            border: 'none',
+            background: activeTab === 'banks' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'banks' ? '#ffffff' : 'var(--text-muted)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Landmark size={16} />
+          Bank Master Catalog ({banks.length})
+        </button>
+      </div>
+
+      {/* Alert Notification Toast */}
       {toastMsg.text && (
         <div style={{
           marginBottom: '20px',
@@ -135,223 +260,475 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`;
         </div>
       )}
 
-      {/* Top Parameter Grid (Hero-11 Fintech Cards) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-        gap: '20px',
-        marginBottom: '24px'
-      }}>
-        <div className="fintech-card" style={{ padding: '22px' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 700, color: 'var(--text-main)' }}>
-            Financial Parameters
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <label className="input-label">Standard TDS Tax Rate (%)</label>
-              <input type="number" className="input-field" value="10.00" readOnly style={{ fontWeight: 700 }} />
-            </div>
-            <div>
-              <label className="input-label">Customer Profit Share (%)</label>
-              <input type="number" className="input-field" value="40.00" readOnly style={{ fontWeight: 700 }} />
-            </div>
-            <div>
-              <label className="input-label">Company Treasury Share (%)</label>
-              <input type="number" className="input-field" value="60.00" readOnly style={{ fontWeight: 700 }} />
-            </div>
-          </div>
-        </div>
+      {/* TAB 1: FINANCIAL & CALCULATION SETTINGS */}
+      {activeTab === 'financial' && (
+        <form onSubmit={handleSaveSettings}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '24px' }}>
 
-        <div className="fintech-card" style={{ padding: '22px' }}>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 700, color: 'var(--text-main)' }}>
-            Active Cloud Database
-          </h3>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 14px 0' }}>
-            Connected to <strong>Supabase Cloud PostgreSQL</strong> (Realtime Engine Active)
-          </p>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 14px',
-            borderRadius: '10px',
-            background: 'rgba(4, 47, 46, 0.05)',
-            border: '1px solid var(--panel-border)',
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'var(--text-main)',
-            marginBottom: '16px'
-          }}>
-            <Database size={15} style={{ color: 'var(--brand-accent)' }} /> Supabase Cloud PostgreSQL / MySQL
+            {/* Section 1: Profit Share Ratio Card */}
+            <div className="fintech-card" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(13, 148, 136, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Percent size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Default Profit Sharing Ratio
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Applied to all new customers unless individually customized
+                  </span>
+                </div>
+              </div>
+
+              {/* Customer Profit % */}
+              <div style={{ marginBottom: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <label className="input-label" style={{ margin: 0 }}>Customer Profit Share (%)</label>
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary)' }}>
+                    {settings.default_customer_profit_pct}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={settings.default_customer_profit_pct}
+                  onChange={(e) => handleSettingChange('default_customer_profit_pct', e.target.value)}
+                  style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer', marginBottom: '8px' }}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={settings.default_customer_profit_pct}
+                  onChange={(e) => handleSettingChange('default_customer_profit_pct', e.target.value)}
+                  className="input-field"
+                  style={{ fontWeight: 700, fontSize: '14px' }}
+                  required
+                />
+              </div>
+
+              {/* Company Profit % (Auto calculated compliment) */}
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: 'rgba(4, 47, 46, 0.03)',
+                border: '1px dashed var(--panel-border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Company / Admin Retained Share:</span>
+                  <strong style={{ fontSize: '16px', color: 'var(--text-main)', fontWeight: 800 }}>
+                    {100 - (Number(settings.default_customer_profit_pct) || 40)}%
+                  </strong>
+                </div>
+                <span className="badge badge-teal" style={{ fontSize: '11px' }}>Auto Calculated</span>
+              </div>
+            </div>
+
+            {/* Section 2: TDS Tax Deduction Settings */}
+            <div className="fintech-card" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(234, 88, 12, 0.1)', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
+                    TDS Deduction Configuration
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Tax Deducted at Source on Customer Gross Profit Share
+                  </span>
+                </div>
+              </div>
+
+              {/* Toggle Enable TDS */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: 'rgba(4, 47, 46, 0.02)',
+                border: '1px solid var(--panel-border)',
+                marginBottom: '16px'
+              }}>
+                <div>
+                  <strong style={{ fontSize: '13.5px', color: 'var(--text-main)', display: 'block' }}>Enable TDS Deduction</strong>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Automatically deduct TDS from customer payouts</span>
+                </div>
+                <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(settings.enable_tds_deduction)}
+                    onChange={(e) => handleSettingChange('enable_tds_deduction', e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    borderRadius: '24px',
+                    background: settings.enable_tds_deduction ? 'var(--primary)' : '#cbd5e1',
+                    transition: '0.2s'
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      height: '18px',
+                      width: '18px',
+                      left: settings.enable_tds_deduction ? '22px' : '3px',
+                      bottom: '3px',
+                      backgroundColor: 'white',
+                      borderRadius: '50%',
+                      transition: '0.2s'
+                    }} />
+                  </span>
+                </label>
+              </div>
+
+              {/* TDS Rate % */}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Default TDS Deduction Rate (%) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="0.5"
+                  disabled={!settings.enable_tds_deduction}
+                  value={settings.default_tds_pct}
+                  onChange={(e) => handleSettingChange('default_tds_pct', e.target.value)}
+                  className="input-field"
+                  style={{ fontWeight: 700, fontSize: '14px', opacity: settings.enable_tds_deduction ? 1 : 0.6 }}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Section 3: Trading & Application Defaults */}
+            <div className="fintech-card" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Briefcase size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Application &amp; IPO Defaults
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Default parameters for new applications and offering biddings
+                  </span>
+                </div>
+              </div>
+
+              {/* Default Bid Amount */}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Default Retail Application Bid Amount (₹) *</label>
+                <input
+                  type="number"
+                  min="1000"
+                  step="100"
+                  value={settings.default_retail_bid_amount}
+                  onChange={(e) => handleSettingChange('default_retail_bid_amount', e.target.value)}
+                  className="input-field"
+                  style={{ fontWeight: 700, fontSize: '14px' }}
+                  required
+                />
+              </div>
+
+              {/* Default Category */}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Default Application Category</label>
+                <select
+                  value={settings.default_category}
+                  onChange={(e) => handleSettingChange('default_category', e.target.value)}
+                  className="input-field"
+                  style={{ fontWeight: 700 }}
+                >
+                  <option value="RETAIL">RETAIL (Individual ≤ ₹2 Lakh)</option>
+                  <option value="sHNI">sHNI (Small HNI ₹2 Lakh - ₹10 Lakh)</option>
+                  <option value="bHNI">bHNI (Big HNI &gt; ₹10 Lakh)</option>
+                </select>
+              </div>
+
+              {/* Default Exit Mode */}
+              <div>
+                <label className="input-label">Default Settlement Exit Strategy</label>
+                <select
+                  value={settings.default_exit_mode}
+                  onChange={(e) => handleSettingChange('default_exit_mode', e.target.value)}
+                  className="input-field"
+                  style={{ fontWeight: 700 }}
+                >
+                  <option value="MARKET">Exchange Market Listing (Standard)</option>
+                  <option value="KOSTAK">Kostak Rate (Fixed Application Exit)</option>
+                  <option value="SAUDA">Subject to Sauda (Allotment-Linked Exit)</option>
+                  <option value="PRE_LISTING">Off-Market / Pre-Listing Sale</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Section 4: Live Calculation Simulator Card */}
+            <div className="fintech-card" style={{ padding: '24px', background: 'linear-gradient(145deg, rgba(4, 47, 46, 0.04) 0%, rgba(13, 148, 136, 0.08) 100%)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Calculator size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Live Profit Split Simulator
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Preview how ₹ payouts will calculate under current settings
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Simulate Sample Total Gross Profit (₹):</label>
+                <input
+                  type="number"
+                  min="100"
+                  step="500"
+                  value={simGrossProfit}
+                  onChange={(e) => setSimGrossProfit(Math.max(0, Number(e.target.value) || 0))}
+                  className="input-field"
+                  style={{ fontWeight: 800, fontSize: '15px' }}
+                />
+              </div>
+
+              {/* Calculation Breakdown */}
+              <div style={{
+                borderRadius: '12px',
+                background: '#ffffff',
+                border: '1px solid var(--panel-border)',
+                padding: '14px',
+                fontSize: '13px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Total Gross Profit:</span>
+                  <strong style={{ color: 'var(--text-main)' }}>₹{simGrossProfit.toLocaleString('en-IN')}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+                  <span style={{ color: 'var(--primary)' }}>Customer Share ({simCustomerPct}%):</span>
+                  <strong>₹{simCustGross.toLocaleString('en-IN')}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', color: settings.enable_tds_deduction ? '#ea580c' : 'var(--text-dim)' }}>
+                  <span>TDS Tax ({settings.enable_tds_deduction ? `${settings.default_tds_pct}%` : 'Disabled'}):</span>
+                  <strong>- ₹{simTdsAmt.toLocaleString('en-IN')}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', fontWeight: 800 }}>
+                  <span style={{ color: 'var(--success)' }}>Net Customer Payout:</span>
+                  <span style={{ color: 'var(--success)', fontSize: '15px' }}>₹{simNetPayout.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', color: 'var(--text-muted)' }}>
+                  <span>Company Retained Share ({simCompanyPct}%):</span>
+                  <strong>₹{simCompanyGross.toLocaleString('en-IN')}</strong>
+                </div>
+              </div>
+            </div>
+
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
-            <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Bank DDL Schema Query</span>
+
+          {/* Action Buttons */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '18px 24px',
+            borderRadius: '16px',
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--panel-border)',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={copySqlToClipboard}
-              style={{ padding: '6px 12px', fontSize: '12px', gap: '6px' }}
+              onClick={handleResetSettings}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              {copiedSql ? <Check size={14} /> : <Copy size={14} />}
-              {copiedSql ? 'Copied SQL' : 'Copy Bank SQL'}
+              <RotateCcw size={15} /> Reset to Defaults
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bank Master Management Section (Hero-11) */}
-      <div className="fintech-card" style={{ padding: '24px' }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '20px',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'rgba(4, 47, 46, 0.06)',
-                color: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Landmark size={20} />
-              </div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)' }}>
-                Bank Master Catalog
-              </h3>
-              <span className="badge badge-teal">
-                {banks.length} Banks Active
-              </span>
-            </div>
-            <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
-              Banks listed here appear in the Customer Creation / Edit dropdown for direct one-click selection.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-              <input
-                type="text"
-                placeholder="Search banks..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input-field"
-                style={{ paddingLeft: '32px', height: '36px', fontSize: '13px', width: '200px' }}
-              />
-            </div>
 
             <button
-              type="button"
+              type="submit"
+              disabled={isSavingSettings}
               className="btn btn-primary"
-              onClick={() => setIsAddModalOpen(true)}
-              style={{ padding: '8px 16px', fontSize: '13px' }}
+              style={{ padding: '12px 28px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              <Plus size={15} /> Add Bank
+              <Save size={16} />
+              {isSavingSettings ? 'Saving Settings...' : 'Save & Apply Calculation Settings'}
             </button>
           </div>
-        </div>
+        </form>
+      )}
 
-        {/* Bank Grid */}
-        {isLoading ? (
-          <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-            Loading bank master records...
-          </div>
-        ) : filteredBanks.length > 0 ? (
+      {/* TAB 2: BANK MASTER CATALOG */}
+      {activeTab === 'banks' && (
+        <div className="fintech-card" style={{ padding: '24px' }}>
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '20px',
+            flexWrap: 'wrap',
             gap: '12px'
           }}>
-            {filteredBanks.map((b, idx) => (
-              <div
-                key={b.id || idx}
-                style={{
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(4, 47, 46, 0.06)',
+                  color: 'var(--primary)',
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: 'rgba(4, 47, 46, 0.02)',
-                  border: '1px solid var(--panel-border)',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                  <div style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '8px',
-                    background: 'rgba(4, 47, 46, 0.08)',
-                    color: 'var(--primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: '11px',
-                    flexShrink: 0
-                  }}>
-                    {idx + 1}
-                  </div>
-                  <div style={{ overflow: 'hidden' }}>
-                    <strong style={{
-                      fontSize: '13.5px',
-                      color: 'var(--text-main)',
-                      display: 'block',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>
-                      {b.bank_name}
-                    </strong>
-                    {b.ifsc_prefix ? (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                        IFSC: {b.ifsc_prefix}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Verified Bank</span>
-                    )}
-                  </div>
+                  justifyContent: 'center'
+                }}>
+                  <Landmark size={20} />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleDeleteBank(b)}
-                  title={`Delete ${b.bank_name}`}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-dim)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'color 0.15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-dim)'}
-                >
-                  <Trash2 size={15} />
-                </button>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Bank Master Catalog
+                </h3>
+                <span className="badge badge-teal">
+                  {banks.length} Banks Active
+                </span>
               </div>
-            ))}
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                Banks listed here appear in the Customer Creation / Edit dropdown for direct one-click selection.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+                <input
+                  type="text"
+                  placeholder="Search banks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input-field"
+                  style={{ paddingLeft: '32px', height: '36px', fontSize: '13px', width: '200px' }}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setIsAddModalOpen(true)}
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                <Plus size={15} /> Add Bank
+              </button>
+            </div>
           </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
-            <Landmark size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
-            <p style={{ margin: 0, fontWeight: 600 }}>No banks found matching "{searchQuery}"</p>
-          </div>
-        )}
-      </div>
+
+          {/* Bank Grid */}
+          {isLoadingBanks ? (
+            <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+              Loading bank master records...
+            </div>
+          ) : filteredBanks.length > 0 ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: '12px'
+            }}>
+              {filteredBanks.map((b, idx) => (
+                <div
+                  key={b.id || idx}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    background: 'rgba(4, 47, 46, 0.02)',
+                    border: '1px solid var(--panel-border)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '8px',
+                      background: 'rgba(4, 47, 46, 0.08)',
+                      color: 'var(--primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '11px',
+                      flexShrink: 0
+                    }}>
+                      {idx + 1}
+                    </div>
+                    <div style={{ overflow: 'hidden' }}>
+                      <strong style={{
+                        fontSize: '13.5px',
+                        color: 'var(--text-main)',
+                        display: 'block',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {b.bank_name}
+                      </strong>
+                      {b.ifsc_prefix ? (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          IFSC: {b.ifsc_prefix}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Verified Bank</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBank(b)}
+                    title={`Delete ${b.bank_name}`}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-dim)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'color 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--danger)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-dim)'}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-muted)' }}>
+              <Landmark size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
+              <p style={{ margin: 0, fontWeight: 600 }}>No banks found matching "{searchQuery}"</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add Bank Modal */}
       {isAddModalOpen && (
@@ -410,10 +787,10 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);`;
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmittingBank}
                   className="btn btn-primary"
                 >
-                  {isSubmitting ? 'Adding...' : 'Save Bank'}
+                  {isSubmittingBank ? 'Adding...' : 'Save Bank'}
                 </button>
               </div>
             </form>

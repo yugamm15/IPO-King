@@ -282,48 +282,79 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                     <code style={{ color: 'var(--primary)', fontWeight: 700 }}>{customer.pan_number || '—'}</code>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>5. DPID (Demat)</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>5. Aadhaar Number</span>
+                    <code style={{ color: 'var(--brand-accent)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      {customer.aadhaar_number ? customer.aadhaar_number.replace(/(\d{4})(?=\d)/g, '$1 ') : (customer.aadhar_number ? String(customer.aadhar_number).replace(/(\d{4})(?=\d)/g, '$1 ') : '—')}
+                    </code>
+                  </div>
+                  <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>6. Birthdate (DOB)</span>
+                    <strong style={{ color: 'var(--text-main)' }}>
+                      {customer.birthdate ? new Date(customer.birthdate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (customer.dob || '—')}
+                    </strong>
+                  </div>
+                  <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>7. DPID (Demat)</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.dpid || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>6. Bank Name</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>8. Bank Name</span>
                     <strong style={{ color: 'var(--primary)' }}>{customer.bank_name || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>7. Bank Account No</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>9. Bank Account No</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.bank_account_no || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>8. Login ID</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>10. Login ID</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.login_id || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>9. Arham (Password)</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>11. Arham (Password)</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.password_encrypted || 'Arham'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>10. Customer Code</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>12. Customer Code</span>
                     <strong style={{ color: 'var(--brand-accent)' }}>{customer.code || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>11. Mobile Number</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>13. Mobile Number</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.mobile_number || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>12. Balance</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>14. Balance</span>
                     <strong style={{ color: 'var(--success-text)' }}>₹ {Number(customer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>13. Alt Phone</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>15. Alt Phone</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.phone_alternate || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>14. Email Address</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>16. Email Address</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.email || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>15. Other Phone</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>17. Other Phone</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.phone_other || '—'}</strong>
+                  </div>
+                  <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>18. Return Amount</span>
+                    <strong style={{ color: 'var(--warning)' }}>₹ {Number(customer.return_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                  </div>
+                  <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>19. TDS Remarks</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{customer.tds_remarks || '—'}</strong>
+                  </div>
+                  <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>20. Customer Profit Share</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                      <span className="badge badge-teal" style={{ fontWeight: 800 }}>
+                        {customer.profit_share_percentage !== undefined && customer.profit_share_percentage !== null ? `${customer.profit_share_percentage}%` : '40%'} Client
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        ({Math.max(0, 100 - (Number(customer.profit_share_percentage) || 40))}% Treasury)
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -423,7 +454,9 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
               {/* Passbook Stat Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                 <div className="stat-card" style={{ padding: '14px 16px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Total Credits (40% Share)</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
+                    Total Credits ({customer.profit_share_percentage !== undefined && customer.profit_share_percentage !== null ? customer.profit_share_percentage : 40}% Share)
+                  </span>
                   <strong style={{ fontSize: '19px', color: 'var(--success-text)', fontWeight: 800 }}>
                     ₹ {totalCredits.toLocaleString('en-IN')}
                   </strong>

@@ -68,10 +68,11 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
     sampleGross = isRejected ? 0 : Math.round(diff * rawQty);
   }
 
-  const sampleClient40 = Math.round(sampleGross * 0.40);
-  const sampleAdmin60 = Math.round(sampleGross * 0.60);
-  const sampleTds10 = sampleClient40 > 0 ? Math.round(sampleClient40 * 0.10) : 0;
-  const sampleNetPayout = sampleClient40 > 0 ? (sampleClient40 - sampleTds10) : sampleClient40;
+  const clientPct = Number(app.profit_share_percentage ?? app.customers?.profit_share_percentage ?? 40);
+  const sampleClientShare = Math.round(sampleGross * (clientPct / 100));
+  const sampleAdminShare = sampleGross - sampleClientShare;
+  const sampleTds10 = sampleClientShare > 0 ? Math.round(sampleClientShare * 0.10) : 0;
+  const sampleNetPayout = sampleClientShare > 0 ? (sampleClientShare - sampleTds10) : sampleClientShare;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -140,7 +141,7 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
                 Individual Exit / Sell Price
               </h3>
               <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                {app.customer_name} &bull; <strong style={{ color: 'var(--primary)' }}>{app.ipo_name}</strong> ({rawLots} Lots / {rawQty} sh)
+                {app.customer_name} &bull; <strong style={{ color: 'var(--primary)' }}>{app.ipo_name}</strong> ({rawLots} Lots / {rawQty} sh) &bull; <span className="badge badge-teal" style={{ padding: '1px 6px', fontSize: '11px' }}>{clientPct}% Profit Share</span>
               </p>
             </div>
           </div>
@@ -165,18 +166,18 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
           </button>
         </div>
 
-        {/* Modal Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '22px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
             {errorMsg && (
               <div style={{
-                padding: '10px 14px',
-                borderRadius: '10px',
+                padding: '12px 16px',
+                borderRadius: '12px',
                 background: 'var(--danger-light)',
-                border: '1px solid rgba(220, 38, 38, 0.2)',
                 color: 'var(--danger-text)',
-                fontSize: '12.5px',
+                border: '1px solid rgba(220, 38, 38, 0.2)',
+                fontSize: '13px',
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
@@ -187,67 +188,68 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
               </div>
             )}
 
-            {/* Quick Context Card */}
+            {/* Quick Context Summary */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               gap: '10px',
-              background: 'rgba(4, 47, 46, 0.03)',
+              background: 'rgba(4, 47, 46, 0.02)',
               border: '1px solid var(--panel-border)',
               borderRadius: '14px',
-              padding: '12px 14px'
+              padding: '12px'
             }}>
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>PAN Number</span>
-                <code style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--primary)' }}>{app.pan || '—'}</code>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Applied Lots</span>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{rawLots} Lots ({rawQty} sh)</strong>
               </div>
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Bank</span>
-                <strong style={{ fontSize: '12.5px', color: 'var(--text-main)' }}>{app.bank_name || 'Bank'}</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Issue / Cut-off</span>
+                <strong style={{ fontSize: '14px', color: 'var(--primary)' }}>₹{issuePrice}</strong>
               </div>
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Issue Cap Price</span>
-                <strong style={{ fontSize: '12.5px', color: 'var(--text-main)' }}>₹{issuePrice}</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Customer Profit Split</span>
+                <strong style={{ fontSize: '14px', color: 'var(--brand-accent)' }}>{clientPct}% Client</strong>
               </div>
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Total Shares</span>
-                <strong style={{ fontSize: '12.5px', color: 'var(--brand-accent)' }}>{rawQty} shares</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Current Exit Mode</span>
+                <span className="badge badge-teal" style={{ marginTop: '2px', display: 'inline-block' }}>{exitMode}</span>
               </div>
             </div>
 
             {/* Exit Mode Selector */}
             <div>
-              <label className="input-label">Select Exit Strategy</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+              <label className="input-label" style={{ marginBottom: '8px' }}>Select Settlement / Exit Mode</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                 {[
-                  { id: 'MARKET', label: 'Market Listing', icon: TrendingUp, desc: 'Actual Sell Price' },
-                  { id: 'KOSTAK', label: 'Kostak', icon: Tag, desc: 'Fixed / Lot' },
-                  { id: 'SAUDA', label: 'Sub to Sauda', icon: Handshake, desc: 'Fixed if Allotted' },
-                  { id: 'PRE_LISTING', label: 'Off-Market', icon: Zap, desc: 'Pre-Listing Price' }
-                ].map((mode) => {
-                  const Icon = mode.icon;
-                  const isSelected = exitMode === mode.id;
+                  { mode: 'MARKET', label: 'Market Exit', desc: 'Listing Exchange Price' },
+                  { mode: 'PRE_LISTING', label: 'Pre-Listing', desc: 'Off-market share sale' },
+                  { mode: 'KOSTAK', label: 'Kostak', desc: 'Flat rate per lot' },
+                  { mode: 'SAUDA', label: 'Subject Sauda', desc: 'Premium on allotment' }
+                ].map((item) => {
+                  const active = exitMode === item.mode;
                   return (
                     <button
-                      key={mode.id}
+                      key={item.mode}
                       type="button"
-                      onClick={() => setExitMode(mode.id)}
+                      onClick={() => setExitMode(item.mode)}
                       style={{
-                        padding: '10px 8px',
+                        padding: '12px 8px',
                         borderRadius: '12px',
-                        border: isSelected ? '2px solid var(--primary)' : '1px solid var(--panel-border)',
-                        background: isSelected ? 'rgba(4, 47, 46, 0.08)' : 'var(--panel-bg)',
+                        border: '1.5px solid',
+                        borderColor: active ? 'var(--brand-accent)' : 'var(--panel-border)',
+                        background: active ? 'rgba(13, 148, 136, 0.08)' : 'var(--panel-bg)',
                         cursor: 'pointer',
+                        textAlign: 'center',
                         display: 'flex',
                         flexDirection: 'column',
-                        alignItems: 'center',
                         gap: '4px',
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <Icon size={18} style={{ color: isSelected ? 'var(--primary)' : 'var(--text-muted)' }} />
-                      <strong style={{ fontSize: '12px', color: isSelected ? 'var(--primary)' : 'var(--text-main)' }}>{mode.label}</strong>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{mode.desc}</span>
+                      <strong style={{ fontSize: '12.5px', color: active ? 'var(--brand-accent)' : 'var(--text-main)' }}>
+                        {item.label}
+                      </strong>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.desc}</span>
                     </button>
                   );
                 })}
@@ -331,7 +333,7 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
               </div>
             </div>
 
-            {/* Live Financial Breakdown Card (40-60 Split + 10% TDS) */}
+            {/* Live Financial Breakdown Card (Custom Split + 10% TDS) */}
             <div style={{
               background: 'rgba(4, 47, 46, 0.04)',
               border: '1px solid var(--panel-border)',
@@ -343,7 +345,7 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
                   Institutional Settlement Preview
                 </span>
                 <span className="badge badge-teal" style={{ fontSize: '11px' }}>
-                  40% Client &bull; 60% Desk &bull; 10% TDS
+                  {clientPct}% Client &bull; {Math.max(0, 100 - clientPct)}% Desk &bull; 10% TDS
                 </span>
               </div>
 
@@ -359,10 +361,10 @@ export default function IndividualExitModal({ isOpen, app, onClose, onSuccess })
 
                 <div style={{ background: 'var(--panel-bg)', padding: '10px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                    {sampleClient40 < 0 ? 'Customer Loss (40%)' : 'Customer 40%'}
+                    {sampleClientShare < 0 ? `Customer Loss (${clientPct}%)` : `Customer Share (${clientPct}%)`}
                   </span>
-                  <strong style={{ fontSize: '15px', color: sampleClient40 < 0 ? 'var(--danger-text)' : 'var(--warning)' }}>
-                    {sampleClient40 < 0 ? `-₹${Math.abs(sampleClient40).toLocaleString('en-IN')}` : `₹${sampleClient40.toLocaleString('en-IN')}`}
+                  <strong style={{ fontSize: '15px', color: sampleClientShare < 0 ? 'var(--danger-text)' : 'var(--warning)' }}>
+                    {sampleClientShare < 0 ? `-₹${Math.abs(sampleClientShare).toLocaleString('en-IN')}` : `₹${sampleClientShare.toLocaleString('en-IN')}`}
                   </strong>
                 </div>
 

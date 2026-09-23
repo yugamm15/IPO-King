@@ -255,6 +255,32 @@ export default function Applications({ showConfirm }) {
     return Array.from(bSet).sort();
   }, [applications]);
 
+  // Compute status counts for the selected IPO scope
+  const statusCounts = useMemo(() => {
+    const baseApps = applications.filter((app) => {
+      if (selectedIpoId !== 'All') {
+        const matchIpo = String(app.ipo_id) === String(selectedIpoId) || String(app.ipo_name).toLowerCase() === String(activeSelectedIpo?.ipo_name).toLowerCase();
+        if (!matchIpo) return false;
+      }
+      return true;
+    });
+
+    let full = 0;
+    let partial = 0;
+    let notAllotted = 0;
+    let pending = 0;
+
+    baseApps.forEach(a => {
+      const s = String(a.allotment_status || a.status || 'Pending').toLowerCase();
+      if (s.includes('full') || s === 'allotted') full++;
+      else if (s.includes('partial')) partial++;
+      else if (s.includes('not') || s.includes('reject')) notAllotted++;
+      else pending++;
+    });
+
+    return { total: baseApps.length, full, partial, notAllotted, pending };
+  }, [applications, selectedIpoId, activeSelectedIpo]);
+
   // Filter applications by selected IPO, bank, status, search query
   const filteredApps = useMemo(() => {
     return applications.filter((app) => {
@@ -270,9 +296,23 @@ export default function Applications({ showConfirm }) {
         if (!appBank.includes(bankFilter.toLowerCase())) return false;
       }
 
-      // Status filter
-      const statusVal = String(app.allotment_status || app.status || 'Pending');
-      const statusMatch = statusFilter === 'All' || statusVal.toLowerCase().includes(statusFilter.toLowerCase());
+      // Status filter (Allotment / Partial / Not Allotted / Pending)
+      const statusVal = String(app.allotment_status || app.status || 'Pending').toLowerCase();
+      let statusMatch = true;
+      if (statusFilter !== 'All') {
+        const filterKey = statusFilter.toLowerCase();
+        if (filterKey === 'not allotted' || filterKey === 'rejected') {
+          statusMatch = statusVal.includes('not') || statusVal.includes('reject');
+        } else if (filterKey === 'partial' || filterKey === 'partial allotment') {
+          statusMatch = statusVal.includes('partial');
+        } else if (filterKey === 'full allotment' || filterKey === 'full' || filterKey === 'allotment') {
+          statusMatch = statusVal.includes('full') || statusVal === 'allotted';
+        } else if (filterKey === 'pending') {
+          statusMatch = statusVal.includes('pending');
+        } else {
+          statusMatch = statusVal.includes(filterKey);
+        }
+      }
 
       // Search Query
       const query = searchQuery.toLowerCase().trim();
@@ -462,13 +502,13 @@ export default function Applications({ showConfirm }) {
         </div>
 
         <div className="stat-card">
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Client Profit (40%)</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Client Profit Share</span>
           <h3 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--warning)', margin: '8px 0 4px 0' }}>₹{totalClientProfit.toLocaleString('en-IN')}</h3>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Company (60%): ₹{totalAdminCommission.toLocaleString('en-IN')}</span>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Company Treasury: ₹{totalAdminCommission.toLocaleString('en-IN')}</span>
         </div>
       </div>
 
-      {/* Filter Tabs Bar & Search Bar (Hero-11) */}
+      {/* Filter Toolbar: Allotment Status Dropdown, Bank Dropdown & Search Bar */}
       <div style={{
         background: 'var(--panel-bg)',
         border: '1px solid var(--panel-border)',
@@ -478,65 +518,48 @@ export default function Applications({ showConfirm }) {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        gap: '16px',
+        gap: '12px',
         flexWrap: 'wrap'
       }}>
-        {/* Status Filter Badges */}
-        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
-          {[
-            { id: 'All', label: 'All Applications' },
-            { id: 'Full Allotment', label: 'Full Allotment' },
-            { id: 'Partial', label: 'Partial Allotment' },
-            { id: 'Pending', label: 'Pending' },
-            { id: 'Rejected', label: 'Rejected' }
-          ].map((tab) => {
-            const isActive = statusFilter === tab.id;
-            const count = applications.filter((app) => {
-              if (selectedIpoId !== 'All') {
-                const matchIpo = String(app.ipo_id) === String(selectedIpoId) || String(app.ipo_name).toLowerCase() === String(activeSelectedIpo?.ipo_name).toLowerCase();
-                if (!matchIpo) return false;
-              }
-              if (tab.id === 'All') return true;
-              const statusVal = String(app.allotment_status || app.status || 'Pending').toLowerCase();
-              return statusVal.includes(tab.id.toLowerCase());
-            }).length;
+        {/* Left: Dropdown Filter Group */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Allotment Status Filter Dropdown */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '12px',
+            padding: '0 12px',
+            height: '38px'
+          }}>
+            <SlidersHorizontal size={15} style={{ color: 'var(--brand-accent)', flexShrink: 0 }} />
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text-main)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                outline: 'none',
+                minWidth: '175px'
+              }}
+            >
+              <option value="All">🎯 All Allotments ({statusCounts.total})</option>
+              <option value="Full Allotment">✅ Full Allotment ({statusCounts.full} bids)</option>
+              <option value="Partial">⚡ Partial Allotment ({statusCounts.partial} bids)</option>
+              <option value="Not Allotted">❌ Not Allotted ({statusCounts.notAllotted} bids)</option>
+              <option value="Pending">⏳ Pending ({statusCounts.pending} bids)</option>
+            </select>
+          </div>
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setStatusFilter(tab.id);
-                  setCurrentPage(1);
-                }}
-                className={`btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  gap: '8px'
-                }}
-              >
-                <span>{tab.label}</span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    padding: '1px 6px',
-                    borderRadius: '10px',
-                    background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(4, 47, 46, 0.08)',
-                    color: isActive ? '#FAF6EC' : 'var(--text-muted)'
-                  }}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right Search & Bank Filters */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
           {/* Bank Wise Filter Dropdown */}
           <div style={{
             display: 'flex',
@@ -585,43 +608,73 @@ export default function Applications({ showConfirm }) {
             </select>
           </div>
 
-          {/* Search Field */}
-          <div style={{ position: 'relative', minWidth: '240px', maxWidth: '320px', flex: '1 1 240px' }}>
-            <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
-            <input
-              type="text"
-              className="input-field"
-              placeholder="Search customer, PAN, IPO, bank..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
+          {/* Active Filter Clear Reset Button */}
+          {(statusFilter !== 'All' || bankFilter !== 'All' || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('All');
+                setBankFilter('All');
+                setSearchQuery('');
                 setCurrentPage(1);
               }}
               style={{
-                paddingLeft: '38px',
-                paddingRight: searchQuery ? '36px' : '14px',
+                background: 'rgba(220, 38, 38, 0.08)',
+                border: '1px solid rgba(220, 38, 38, 0.2)',
+                color: 'var(--danger-text)',
+                borderRadius: '10px',
+                padding: '0 12px',
                 height: '38px',
-                fontSize: '13.5px',
-                borderRadius: '12px'
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
               }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentPage(1);
-                }}
-                style={{
-                  position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
-                }}
-                title="Clear search"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
+              title="Reset all active filters"
+            >
+              <X size={13} /> Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Right Search Filter */}
+        <div style={{ position: 'relative', minWidth: '240px', maxWidth: '340px', flex: '1 1 240px' }}>
+          <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            className="input-field"
+            placeholder="Search customer, PAN, IPO, bank..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              paddingLeft: '38px',
+              paddingRight: searchQuery ? '36px' : '14px',
+              height: '38px',
+              fontSize: '13.5px',
+              borderRadius: '12px'
+            }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
+              style={{
+                position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
+              }}
+              title="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -637,7 +690,7 @@ export default function Applications({ showConfirm }) {
               <th>Lots / Qty</th>
               <th>Exit Strategy</th>
               <th>Allotment Status</th>
-              <th>40% Cust Profit</th>
+              <th>Client Profit Share</th>
               <th>10% TDS</th>
               <th style={{ textAlign: 'center' }}>Action</th>
             </tr>
@@ -709,7 +762,15 @@ export default function Applications({ showConfirm }) {
                     <td>
                       <select
                         className="input-field"
-                        value={statusVal}
+                        value={
+                          String(statusVal).toLowerCase().includes('not') || String(statusVal).toLowerCase().includes('reject')
+                            ? 'Not Allotted'
+                            : String(statusVal).toLowerCase().includes('partial')
+                            ? 'Partial'
+                            : String(statusVal).toLowerCase().includes('full')
+                            ? 'Full Allotment'
+                            : 'Pending'
+                        }
                         onChange={(e) => handleStatusChange(row, e.target.value)}
                         style={{
                           height: '32px',
@@ -721,10 +782,10 @@ export default function Applications({ showConfirm }) {
                           width: 'auto'
                         }}
                       >
-                        <option value="Pending">PENDING</option>
                         <option value="Full Allotment">FULL ALLOTMENT</option>
-                        <option value="Partial">PARTIAL</option>
-                        <option value="Rejected">REJECTED</option>
+                        <option value="Partial">PARTIAL ALLOTMENT</option>
+                        <option value="Not Allotted">NOT ALLOTTED</option>
+                        <option value="Pending">PENDING</option>
                       </select>
                     </td>
                     <td>

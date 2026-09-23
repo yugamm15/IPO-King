@@ -46,8 +46,8 @@ function getEnvValue(...keys) {
 }
 
 const supabaseUrl = getEnvValue('VITE_SUPABASE_URL', 'SUPABASE_URL') || 'https://munohtnnfozpznsawbvn.supabase.co';
-const supabaseAnonKey = getEnvValue('VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY') || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseKey = getEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY') || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, role = 'admin') {
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -171,8 +171,29 @@ function verifyJwt(token, secret) {
   return payload;
 }
 
+let _runtimeEphemeralSecret = null;
+
+function getJwtSecret() {
+  const secret = getEnvValue('JWT_SECRET');
+  if (secret && secret.trim().length >= 16) return secret.trim();
+
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    if (!_runtimeEphemeralSecret) {
+      _runtimeEphemeralSecret = crypto.randomBytes(32).toString('hex');
+      console.warn('[SECURITY WARNING] JWT_SECRET is not configured in production environment! Using an ephemeral 256-bit crypto secret. Configure JWT_SECRET in environment variables to persist sessions across server restarts.');
+    }
+    return _runtimeEphemeralSecret;
+  }
+
+  // Development environment fallback with unique crypto seed
+  if (!_runtimeEphemeralSecret) {
+    _runtimeEphemeralSecret = crypto.randomBytes(32).toString('hex');
+  }
+  return _runtimeEphemeralSecret;
+}
+
 function createAuthToken(email, role = 'admin') {
-  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const secret = getJwtSecret();
   const now = Date.now();
   const payload = {
     email,
@@ -185,9 +206,26 @@ function createAuthToken(email, role = 'admin') {
 }
 
 function getLoginCredentials() {
+  const email = getEnvValue('AUTH_ADMIN_EMAIL', 'LOGIN_EMAIL');
+  const password = getEnvValue('AUTH_ADMIN_PASSWORD', 'LOGIN_PASSWORD');
+
+  if (email && password) {
+    return { email: email.trim(), password: String(password).trim() };
+  }
+
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    console.error('[CRITICAL SECURITY NOTICE] AUTH_ADMIN_EMAIL or AUTH_ADMIN_PASSWORD is not set in production environment variables! Admin login is restricted until credentials are set.');
+    return {
+      email: email ? email.trim() : null,
+      password: null
+    };
+  }
+
+  // Local development fallback only
+  console.warn('[DEV NOTICE] Using development admin credentials. Ensure AUTH_ADMIN_EMAIL and AUTH_ADMIN_PASSWORD are set before production deployment.');
   return {
-    email: getEnvValue('AUTH_ADMIN_EMAIL', 'LOGIN_EMAIL') || 'yugamkothari886@gmail.com',
-    password: getEnvValue('AUTH_ADMIN_PASSWORD', 'LOGIN_PASSWORD') || 'IpoKing@22'
+    email: email || 'yugamkothari886@gmail.com',
+    password: password || 'IpoKing@22'
   };
 }
 
@@ -202,7 +240,7 @@ function getBearerToken(req) {
 }
 
 function requireAuth(req, res) {
-  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const secret = getJwtSecret();
   const token = getBearerToken(req);
   const payload = verifyJwt(token, secret);
   if (!payload) {
@@ -254,7 +292,7 @@ function issueLoginTokens(email, role = 'admin') {
       exp: Math.floor((Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000),
       jti: crypto.randomUUID()
     },
-    getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026'
+    getJwtSecret()
   );
 
   return { accessToken, refreshToken };
@@ -267,23 +305,55 @@ async function requestOtpHandler(req, res) {
   }
 
   const loginEmail = String(email).trim().toLowerCase();
-  const creds = getLoginCredentials();
-  if (loginEmail !== creds.email.toLowerCase() || String(password) !== creds.password) {
-    return fail(res, 'Invalid email or password.', 401);
+  let authenticatedUser = null;
+
+  // 1. Direct authentication with Supabase Auth (Users created in Supabase Dashboard)
+  try {
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password: String(password)
+    });
+
+    if (!authError && authData && authData.user) {
+      authenticatedUser = {
+        id: authData.user.id,
+        email: authData.user.email,
+        full_name: authData.user.user_metadata?.full_name || authData.user.user_metadata?.name || 'IPO KING User',
+        role: authData.user.user_metadata?.role || 'admin'
+      };
+    }
+  } catch (err) {
+    console.warn('[Supabase Auth] signInWithPassword error:', err.message);
+  }
+
+  // 2. Fallback to server environment admin credentials (for bootstrap setup)
+  if (!authenticatedUser) {
+    const creds = getLoginCredentials();
+    if (creds.email && creds.password && loginEmail === creds.email.toLowerCase() && String(password) === creds.password) {
+      authenticatedUser = {
+        email: creds.email,
+        role: 'admin',
+        full_name: getAdminName()
+      };
+    }
+  }
+
+  if (!authenticatedUser) {
+    return fail(res, 'Invalid email or password. Please check your Supabase Auth credentials.', 401);
   }
 
   const realOtpCode = generateOtpCode();
   const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
-  await saveOtp(loginEmail, realOtpCode, decoyOtpCode, expiresAt, 'admin');
+  await saveOtp(loginEmail, realOtpCode, decoyOtpCode, expiresAt, authenticatedUser.role || 'admin');
 
-  console.log(`[API /request-otp] Requesting OTP delivery for: ${loginEmail}`);
+  console.log(`[API /request-otp] Requesting 2FA OTP delivery for: ${loginEmail}`);
 
   let emailResult;
   try {
     emailResult = await send2FAOTPEmail(loginEmail, realOtpCode, {
-      userName: getAdminName(),
+      userName: authenticatedUser.full_name || getAdminName(),
       decoyOtpCode
     });
   } catch (err) {
@@ -344,6 +414,7 @@ async function verifyOtpHandler(req, res) {
   }
 
   await deleteOtp(key);
+
   const tokens = issueLoginTokens(key, stored.role || 'admin');
   return ok(res, {
     message: 'Login successful',
@@ -373,7 +444,7 @@ function refreshTokenHandler(req, res) {
     return fail(res, 'Refresh token is required.');
   }
 
-  const secret = getEnvValue('JWT_SECRET') || 'ipoking_enterprise_secret_key_2026';
+  const secret = getJwtSecret();
   const payload = verifyJwt(refreshToken, secret);
   if (!payload || payload.type !== 'refresh') {
     return fail(res, 'Invalid refresh token.', 401);
@@ -411,6 +482,10 @@ app.post('/api/v1/auth/login', (req, res) => {
 
   const loginEmail = String(email).trim().toLowerCase();
   const creds = getLoginCredentials();
+  if (!creds.email || !creds.password) {
+    return fail(res, 'Authentication service is not configured. Please set admin credentials in server environment.', 500);
+  }
+
   if (loginEmail !== creds.email.toLowerCase() || String(password) !== creds.password) {
     return fail(res, 'Invalid email or password.', 401);
   }
@@ -499,6 +574,9 @@ app.get('/api/v1/ipos/live', async (req, res) => {
 });
 
 app.post('/api/v1/allotments/calculate-profit', (req, res) => {
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
   const { allotment_price, listing_price, allotted_quantity } = req.body || {};
 
   const allot = parseFloat(allotment_price) || 0;
@@ -527,6 +605,9 @@ app.post('/api/v1/allotments/calculate-profit', (req, res) => {
 });
 
 app.post('/api/v1/applications/create', async (req, res) => {
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
   const { customer_id, ipo_id, category, quantity, bid_amount, allotment_status } = req.body || {};
 
   // Backend Validation 1: Required Parameters
@@ -559,7 +640,7 @@ app.post('/api/v1/applications/create', async (req, res) => {
       category: category || 'RETAIL',
       quantity: qty,
       bid_amount: bidAmt,
-      allotment_status: allotmentStatus || 'Pending'
+      allotment_status: allotment_status || 'Pending'
     };
 
     const { data, error } = await supabase
@@ -620,6 +701,9 @@ app.get('/api/v1/banks', async (req, res) => {
 });
 
 app.post('/api/v1/banks', async (req, res) => {
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
   try {
     const { bank_name, ifsc_prefix } = req.body || {};
     if (!bank_name || !String(bank_name).trim()) {
@@ -648,6 +732,9 @@ app.post('/api/v1/banks', async (req, res) => {
 });
 
 app.delete('/api/v1/banks/:id', async (req, res) => {
+  const authUser = requireAuth(req, res);
+  if (!authUser) return;
+
   try {
     const { id } = req.params;
     if (id) {

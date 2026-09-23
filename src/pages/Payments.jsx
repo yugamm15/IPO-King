@@ -14,11 +14,13 @@ import {
   DollarSign,
   Tag,
   Handshake,
-  Zap
+  Zap,
+  Users,
+  Filter
 } from 'lucide-react';
 import { fetchApplicationsLedger, subscribeToRealtimeChanges } from '../services/db.js';
 import { SkeletonTableRow } from '../components/SkeletonLoader.jsx';
-import { downloadPayoutVoucherPdf, downloadJainamStcgPdf } from '../utils/pdfGenerator.js';
+import { downloadPayoutVoucherPdf, downloadJainamStcgPdf, downloadCustomerJainamStcgPdf } from '../utils/pdfGenerator.js';
 import Pagination from '../components/Pagination.jsx';
 
 export default function Payments() {
@@ -26,8 +28,9 @@ export default function Payments() {
   const [rawApps, setRawApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState('All');
 
-  // Pagination-2 State
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -62,14 +65,17 @@ export default function Payments() {
       const clientProfit = Number(app.client_share_60) || 0;
       const tds10 = Number(app.tds_10) || 0;
       const netPayout = Number(app.net_payout) || (clientProfit > 0 ? (clientProfit - tds10) : clientProfit);
+      const custSharePct = Number(app.profit_share_percentage ?? app.customers?.profit_share_percentage ?? 40);
 
-      let exitLabel = '40-60 Split';
+      let exitLabel = `${custSharePct}% Split`;
       if (app.exit_mode === 'KOSTAK') exitLabel = `Kostak Exit @ ₹${app.kostak_rate || app.exit_price}`;
       else if (app.exit_mode === 'SAUDA') exitLabel = `Subject to Sauda @ ₹${app.sauda_rate || app.exit_price}`;
       else if (app.exit_mode === 'PRE_LISTING') exitLabel = `Off-Market Sale @ ₹${app.exit_price}`;
       else if (app.allotted_quantity) exitLabel = `${app.allotted_quantity} sh Allocated`;
 
       return {
+        id: app.id || idx,
+        customer_id: app.customer_id,
         txn_id: app.application_number || `TXN-${8800 + idx + 1}`,
         customer: app.customer_name || 'Customer',
         pan: app.pan || '—',
@@ -78,6 +84,7 @@ export default function Payments() {
         txn_type: `Profit Distribution (${exitLabel})`,
         gross_amount: `${gross < 0 ? '-₹ ' + Math.abs(gross).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
         profit_40: `${clientProfit < 0 ? '-₹ ' + Math.abs(clientProfit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + clientProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        client_profit_pct: custSharePct,
         tds_10: `₹ ${tds10.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
         net_payout: `${netPayout < 0 ? '-₹ ' + Math.abs(netPayout).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '₹ ' + netPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
         status: app.allotment_status || 'Verified & Audited'
@@ -103,12 +110,14 @@ export default function Payments() {
 
       const grossStcg = Number(app.profit_amount) || 0;
       const sellTurnover = buyValue + grossStcg;
-      const client40 = Number(app.client_share_60) || Math.round(grossStcg * 0.40);
+      const custSharePct = Number(app.profit_share_percentage ?? app.customers?.profit_share_percentage ?? 40);
+      const client40 = Number(app.client_share_60) || Math.round(grossStcg * (custSharePct / 100));
       const tds10 = Number(app.tds_10) || (client40 > 0 ? Math.round(client40 * 0.10) : 0);
       const netPayout = Number(app.net_payout) || (client40 > 0 ? (client40 - tds10) : client40);
 
       return {
         id: app.id || idx,
+        customer_id: app.customer_id,
         client_name: app.customer_name || 'Customer',
         pan: app.pan || '—',
         bank_name: app.bank_name || '—',
@@ -121,6 +130,7 @@ export default function Payments() {
         sell_turnover: sellTurnover,
         gross_stcg: grossStcg,
         client_40: client40,
+        client_profit_pct: custSharePct,
         tds_10: tds10,
         net_payout: netPayout,
         exit_mode: app.exit_mode || 'MARKET',
@@ -129,23 +139,62 @@ export default function Payments() {
     });
   }, [rawApps]);
 
+  // Unique customers list extracted from ledger data
+  const uniqueCustomers = useMemo(() => {
+    const custMap = new Map();
+    rawApps.forEach((a) => {
+      const name = (a.customer_name || a.customers?.full_name || a.customers?.name || '').trim();
+      const pan = a.pan || a.pan_number || a.customers?.pan_number || '';
+      const bank = a.bank_name || a.customers?.bank_name || '';
+      const bankAcc = a.bank_account || a.customers?.bank_account_no || '';
+      const custId = a.customer_id;
+      const profitShare = a.profit_share_percentage ?? a.customers?.profit_share_percentage ?? 40;
+
+      if (name && !custMap.has(name)) {
+        custMap.set(name, {
+          customer_id: custId,
+          customer: name,
+          client_name: name,
+          full_name: name,
+          pan: pan,
+          pan_number: pan,
+          bank_name: bank,
+          bank_account: bankAcc,
+          bank_account_no: bankAcc,
+          client_profit_pct: profitShare,
+          profit_share_percentage: profitShare
+        });
+      }
+    });
+    return Array.from(custMap.values()).sort((a, b) => a.customer.localeCompare(b.customer));
+  }, [rawApps]);
+
+  // Dynamic rows for STCG calculations (supports selected customer)
+  const displayedStcgRows = useMemo(() => {
+    if (selectedCustomer === 'All') return stcgRows;
+    return stcgRows.filter(r => r.client_name === selectedCustomer);
+  }, [stcgRows, selectedCustomer]);
+
   // STCG Summary Metrics
   const stcgSummary = useMemo(() => {
     return {
-      totalBuyValue: stcgRows.reduce((sum, r) => sum + r.buy_value, 0),
-      totalSellTurnover: stcgRows.reduce((sum, r) => sum + r.sell_turnover, 0),
-      totalGrossStcg: stcgRows.reduce((sum, r) => sum + r.gross_stcg, 0),
-      totalClientProfit: stcgRows.reduce((sum, r) => sum + r.client_40, 0),
-      totalTds: stcgRows.reduce((sum, r) => sum + r.tds_10, 0),
-      totalNetPayout: stcgRows.reduce((sum, r) => sum + r.net_payout, 0),
+      totalBuyValue: displayedStcgRows.reduce((sum, r) => sum + r.buy_value, 0),
+      totalSellTurnover: displayedStcgRows.reduce((sum, r) => sum + r.sell_turnover, 0),
+      totalGrossStcg: displayedStcgRows.reduce((sum, r) => sum + r.gross_stcg, 0),
+      totalClientProfit: displayedStcgRows.reduce((sum, r) => sum + r.client_40, 0),
+      totalTds: displayedStcgRows.reduce((sum, r) => sum + r.tds_10, 0),
+      totalNetPayout: displayedStcgRows.reduce((sum, r) => sum + r.net_payout, 0),
     };
-  }, [stcgRows]);
+  }, [displayedStcgRows]);
 
   // Filtered List
   const filteredList = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (activeTab === 'vouchers') {
       return payments.filter((p) => {
+        const matchesCustomer = selectedCustomer === 'All' || p.customer === selectedCustomer;
+        if (!matchesCustomer) return false;
+
         return (
           !q ||
           p.customer.toLowerCase().includes(q) ||
@@ -156,6 +205,9 @@ export default function Payments() {
       });
     } else {
       return stcgRows.filter((r) => {
+        const matchesCustomer = selectedCustomer === 'All' || r.client_name === selectedCustomer;
+        if (!matchesCustomer) return false;
+
         return (
           !q ||
           r.client_name.toLowerCase().includes(q) ||
@@ -165,7 +217,7 @@ export default function Payments() {
         );
       });
     }
-  }, [activeTab, payments, stcgRows, searchQuery]);
+  }, [activeTab, payments, stcgRows, searchQuery, selectedCustomer]);
 
   // Paginated List
   const paginatedList = useMemo(() => {
@@ -173,65 +225,15 @@ export default function Payments() {
     return filteredList.slice(start, start + pageSize);
   }, [filteredList, currentPage, pageSize]);
 
-  // Export Jainam STCG to Excel / CSV
-  const handleExportCsv = () => {
-    const headers = [
-      'Client Name',
-      'PAN Number',
-      'Bank Name',
-      'IPO Scrip',
-      'Lots',
-      'Quantity (Shares)',
-      'Buy Price (Rs)',
-      'Buy Value (Rs)',
-      'Sell Price (Rs)',
-      'Sell Turnover (Rs)',
-      'Gross STCG Profit (Rs)',
-      'Customer 40% Share (Rs)',
-      '10% TDS Deducted (Rs)',
-      'Net Payable (Rs)',
-      'Exit Mode',
-      'Allotment Status'
-    ];
-
-    const rows = stcgRows.map((r) => [
-      `"${r.client_name}"`,
-      `"${r.pan}"`,
-      `"${r.bank_name}"`,
-      `"${r.scrip}"`,
-      r.lots,
-      r.qty,
-      r.buy_price,
-      r.buy_value,
-      r.sell_price,
-      r.sell_turnover,
-      r.gross_stcg,
-      r.client_40,
-      r.tds_10,
-      r.net_payout,
-      `"${r.exit_mode}"`,
-      `"${r.status}"`
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `jainam_stcg_pnl_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="page-content">
 
-      {/* Top Header (Hero-11) */}
+      {/* Top Welcome Header (Hero-11) */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '20px',
+        marginBottom: '24px',
         flexWrap: 'wrap',
         gap: '16px'
       }}>
@@ -249,91 +251,126 @@ export default function Payments() {
           </p>
         </div>
 
-        {/* Action Buttons */}
-        {activeTab === 'jainam_stcg' && (
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleExportCsv}
-              style={{ padding: '8px 14px', fontSize: '13px', gap: '6px' }}
-            >
-              <FileSpreadsheet size={15} /> Export CSV (Excel)
-            </button>
+        {/* Global STCG PDF Export Action */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadPayments}
+            title="Refresh payments ledger"
+            style={{ padding: '9px 14px' }}
+          >
+            <RefreshCw size={15} /> Refresh
+          </button>
 
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => downloadJainamStcgPdf(stcgRows, stcgSummary)}
-              style={{ padding: '8px 16px', fontSize: '13px', gap: '6px' }}
-            >
-              <FileDown size={15} /> Export Jainam PDF Report
-            </button>
-          </div>
-        )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => downloadJainamStcgPdf(stcgRows, stcgSummary)}
+            title="Export All Portfolio P&L in Jainam Format"
+            style={{ padding: '9px 18px', gap: '8px' }}
+          >
+            <FileSpreadsheet size={16} /> All Portfolio P&amp;L (Jainam PDF)
+          </button>
+        </div>
       </div>
 
-      {/* Navigation Sub-Tabs Bar (Hero-11) */}
+      {/* View Switcher Tabs (Segmented Control) */}
       <div style={{
-        background: 'var(--panel-bg)',
-        border: '1px solid var(--panel-border)',
-        borderRadius: '16px',
-        padding: '6px 10px',
-        marginBottom: '18px',
         display: 'flex',
         gap: '8px',
-        width: 'fit-content'
+        marginBottom: '20px',
+        borderBottom: '1px solid var(--panel-border)',
+        paddingBottom: '12px'
       }}>
         <button
           type="button"
-          onClick={() => { setActiveTab('vouchers'); setCurrentPage(1); }}
-          className={`btn ${activeTab === 'vouchers' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ padding: '8px 18px', borderRadius: '10px', fontSize: '13px', gap: '6px' }}
+          onClick={() => {
+            setActiveTab('vouchers');
+            setCurrentPage(1);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '12px',
+            border: 'none',
+            fontSize: '13.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: activeTab === 'vouchers' ? 'var(--primary)' : 'rgba(4, 47, 46, 0.04)',
+            color: activeTab === 'vouchers' ? '#FAF7F2' : 'var(--text-muted)',
+            transition: 'all 0.15s ease'
+          }}
         >
-          <Wallet size={15} /> Beneficiary Payout Vouchers
+          <Wallet size={16} /> Beneficiary Payout Vouchers
         </button>
 
         <button
           type="button"
-          onClick={() => { setActiveTab('jainam_stcg'); setCurrentPage(1); }}
-          className={`btn ${activeTab === 'jainam_stcg' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ padding: '8px 18px', borderRadius: '10px', fontSize: '13px', gap: '6px' }}
+          onClick={() => {
+            setActiveTab('jainam_stcg');
+            setCurrentPage(1);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '12px',
+            border: 'none',
+            fontSize: '13.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: activeTab === 'jainam_stcg' ? 'var(--primary)' : 'rgba(4, 47, 46, 0.04)',
+            color: activeTab === 'jainam_stcg' ? '#FAF7F2' : 'var(--text-muted)',
+            transition: 'all 0.15s ease'
+          }}
         >
-          <TrendingUp size={15} /> Jainam Tax P&amp;L Statement (STCG)
+          <TrendingUp size={16} /> Jainam Tax P&amp;L Statement (STCG)
         </button>
       </div>
 
-      {/* Jainam Summary Cards (When Jainam STCG tab is active) */}
+      {/* STCG Financial Summary Banner (When viewing STCG tab) */}
       {activeTab === 'jainam_stcg' && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '14px',
-          marginBottom: '18px'
+          marginBottom: '20px'
         }}>
           <div className="stat-card" style={{ padding: '16px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Total Buy Value (Invested)</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
+              {selectedCustomer === 'All' ? 'Total Buy Value' : `${selectedCustomer}'s Buy Value`}
+            </span>
             <h3 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-main)', margin: '6px 0 0' }}>
               ₹ {stcgSummary.totalBuyValue.toLocaleString('en-IN')}
             </h3>
           </div>
 
           <div className="stat-card" style={{ padding: '16px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Total Sell Turnover</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
+              {selectedCustomer === 'All' ? 'Total Sell Turnover' : `${selectedCustomer}'s Sell Turnover`}
+            </span>
             <h3 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--brand-accent)', margin: '6px 0 0' }}>
               ₹ {stcgSummary.totalSellTurnover.toLocaleString('en-IN')}
             </h3>
           </div>
 
           <div className="stat-card" style={{ padding: '16px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Gross Realized STCG</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
+              {selectedCustomer === 'All' ? 'Gross Realized STCG' : `${selectedCustomer}'s Gross Profit`}
+            </span>
             <h3 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--success-text)', margin: '6px 0 0' }}>
               ₹ {stcgSummary.totalGrossStcg.toLocaleString('en-IN')}
             </h3>
           </div>
 
           <div className="stat-card" style={{ padding: '16px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>Customer 40% Share</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
+              {selectedCustomer === 'All' ? 'Client Profit Share' : `${selectedCustomer}'s Profit Share`}
+            </span>
             <h3 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--warning)', margin: '6px 0 0' }}>
               ₹ {stcgSummary.totalClientProfit.toLocaleString('en-IN')}
             </h3>
@@ -348,7 +385,7 @@ export default function Payments() {
         </div>
       )}
 
-      {/* Search Toolbar */}
+      {/* Search & Customer Filter Toolbar */}
       <div style={{
         background: 'var(--panel-bg)',
         border: '1px solid var(--panel-border)',
@@ -361,46 +398,139 @@ export default function Payments() {
         gap: '16px',
         flexWrap: 'wrap'
       }}>
-        <div style={{ position: 'relative', minWidth: '280px', maxWidth: '380px', flex: '1 1 300px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
-          <input
-            type="text"
-            className="input-field"
-            placeholder={activeTab === 'vouchers' ? "Search payment by Txn ID or name..." : "Search by customer, PAN, IPO scrip..."}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            style={{
-              paddingLeft: '38px',
-              paddingRight: searchQuery ? '36px' : '14px',
-              height: '38px',
-              fontSize: '13.5px',
-              borderRadius: '12px'
-            }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+          {/* Search Box */}
+          <div style={{ position: 'relative', minWidth: '240px', maxWidth: '320px', flex: '1 1 240px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              className="input-field"
+              placeholder={activeTab === 'vouchers' ? "Search Txn ID, beneficiary, PAN..." : "Search IPO scrip, PAN, bank..."}
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
               style={{
-                position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
+                paddingLeft: '38px',
+                paddingRight: searchQuery ? '36px' : '14px',
+                height: '38px',
+                fontSize: '13.5px',
+                borderRadius: '12px'
               }}
-              title="Clear search"
-            >
-              <X size={14} />
-            </button>
-          )}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                style={{
+                  position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px'
+                }}
+                title="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Customer Filter Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '240px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '0 12px',
+              height: '38px',
+              borderRadius: '12px',
+              border: selectedCustomer !== 'All' ? '1.5px solid var(--brand-accent)' : '1px solid var(--panel-border)',
+              background: selectedCustomer !== 'All' ? 'rgba(13, 148, 136, 0.08)' : 'var(--panel-bg)',
+              flex: 1
+            }}>
+              <Users size={15} style={{ color: selectedCustomer !== 'All' ? 'var(--brand-accent)' : 'var(--text-dim)' }} />
+              <select
+                value={selectedCustomer}
+                onChange={(e) => {
+                  setSelectedCustomer(e.target.value);
+                  setCurrentPage(1);
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: selectedCustomer !== 'All' ? 'var(--brand-accent)' : 'var(--text-main)',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  width: '100%',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="All">All Customers ({uniqueCustomers.length})</option>
+                {uniqueCustomers.map((c) => (
+                  <option key={c.customer} value={c.customer}>
+                    {c.customer} {c.pan ? `(${c.pan})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedCustomer !== 'All' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCustomer('All');
+                  setCurrentPage(1);
+                }}
+                style={{
+                  background: 'rgba(220, 38, 38, 0.1)',
+                  border: 'none',
+                  color: 'var(--danger-text)',
+                  borderRadius: '8px',
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+                title="Reset customer filter"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </div>
 
-        <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>
-          Showing {filteredList.length} records
-        </span>
+        {/* Customer Statement Download Trigger / Records Counter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {selectedCustomer !== 'All' && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                const activeCust = uniqueCustomers.find(c => c.customer === selectedCustomer) || { customer: selectedCustomer };
+                downloadCustomerJainamStcgPdf(activeCust, stcgRows);
+              }}
+              style={{
+                padding: '8px 16px',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                gap: '6px',
+                borderRadius: '12px',
+                boxShadow: '0 2px 8px rgba(4, 47, 46, 0.2)'
+              }}
+              title={`Download all IPO payments and Jainam P&L Statement for ${selectedCustomer}`}
+            >
+              <FileSpreadsheet size={15} /> Download {selectedCustomer}'s Statement
+            </button>
+          )}
+
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            {filteredList.length} {filteredList.length === 1 ? 'record' : 'records'}
+          </span>
+        </div>
       </div>
 
       {/* VIEW 1: Vouchers Table */}
@@ -413,11 +543,11 @@ export default function Payments() {
                 <th>Customer</th>
                 <th>Beneficiary Account</th>
                 <th>Gross Gain</th>
-                <th>40% Profit Share</th>
+                <th>Client Profit Share</th>
                 <th>10% TDS</th>
                 <th>Payout Net</th>
                 <th>Status</th>
-                <th style={{ textAlign: 'center' }}>Action</th>
+                <th style={{ textAlign: 'center' }}>STATEMENT</th>
               </tr>
             </thead>
             <tbody>
@@ -444,14 +574,34 @@ export default function Payments() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => downloadPayoutVoucherPdf(row)}
-                        style={{ padding: '6px 12px', fontSize: '12px', gap: '5px' }}
-                      >
-                        <FileText size={13} /> Voucher PDF
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => downloadCustomerJainamStcgPdf(row, stcgRows)}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            gap: '5px',
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 2px 6px rgba(4, 47, 46, 0.12)'
+                          }}
+                          title={`Download Jainam-style P&L Statement for all IPOs of ${row.customer}`}
+                        >
+                          <FileSpreadsheet size={13} /> Statement PDF
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => downloadPayoutVoucherPdf(row)}
+                          style={{ padding: '6px 8px', fontSize: '11px', gap: '4px' }}
+                          title="Download single transaction voucher receipt"
+                        >
+                          <FileText size={12} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -488,19 +638,20 @@ export default function Payments() {
                 <th>Buy Price &amp; Value</th>
                 <th>Sell Price &amp; Turnover</th>
                 <th>Gross STCG Gain</th>
-                <th>40% Client Share</th>
+                <th>Client Share</th>
                 <th>10% TDS</th>
                 <th>Net Payable</th>
                 <th>Strategy</th>
+                <th style={{ textAlign: 'center' }}>STATEMENT</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <>
-                  <SkeletonTableRow columns={10} />
-                  <SkeletonTableRow columns={10} />
-                  <SkeletonTableRow columns={10} />
-                  <SkeletonTableRow columns={10} />
+                  <SkeletonTableRow columns={11} />
+                  <SkeletonTableRow columns={11} />
+                  <SkeletonTableRow columns={11} />
+                  <SkeletonTableRow columns={11} />
                 </>
               ) : paginatedList.length > 0 ? (
                 paginatedList.map((row) => (
@@ -554,11 +705,28 @@ export default function Payments() {
                         {row.exit_mode}
                       </span>
                     </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => downloadCustomerJainamStcgPdf(row, stcgRows)}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          gap: '5px',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title={`Download Jainam P&L Statement for ${row.client_name}`}
+                      >
+                        <FileSpreadsheet size={13} /> Statement
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                     <Database size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
                     <p style={{ margin: 0, fontWeight: 600 }}>No Capital Gains P&L records found.</p>
                   </td>

@@ -13,6 +13,7 @@ import {
   Sun,
   AlertTriangle
 } from 'lucide-react';
+import MarketCircuitBackground from '../components/MarketCircuitBackground';
 
 export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
   const [step, setStep] = useState(1);
@@ -234,44 +235,76 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
       alignItems: 'center',
       justifyContent: 'center',
       background: 'var(--bg-main)',
-      padding: '24px'
+      padding: '24px',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
+      {/* Share Market Upper & Lower Circuit Dynamic Chart Background */}
+      <MarketCircuitBackground isDark={isDark} />
+
+      {/* Theme Toggle Button in corner */}
+      {onToggleTheme && (
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          aria-label="Toggle Theme"
+          style={{
+            position: 'absolute',
+            top: '24px',
+            right: '24px',
+            zIndex: 30,
+            background: isDark ? 'rgba(4, 43, 40, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+            border: '1px solid var(--panel-border)',
+            color: 'var(--text-main)',
+            width: '40px',
+            height: '40px',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(4, 47, 46, 0.08)',
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.2s ease'
+          }}
+          title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {isDark ? <Sun size={18} color="#F59E0B" /> : <Moon size={18} color="var(--primary)" />}
+        </button>
+      )}
+
+      {/* Login Card */}
       <div style={{
         maxWidth: '460px',
         width: '100%',
-        background: 'var(--panel-bg)',
+        background: isDark ? 'rgba(4, 43, 40, 0.92)' : 'rgba(255, 255, 255, 0.92)',
         border: '1px solid var(--panel-border)',
         borderRadius: '32px',
-        boxShadow: '0 20px 60px rgba(4, 47, 46, 0.08)',
-        padding: '36px 32px'
+        boxShadow: isDark
+          ? '0 24px 64px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(20, 184, 166, 0.15)'
+          : '0 24px 64px rgba(4, 47, 46, 0.10), 0 0 0 1px rgba(255, 255, 255, 0.6)',
+        padding: '36px 32px',
+        position: 'relative',
+        zIndex: 10,
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)'
       }}>
-        {/* Brand Header (Hero-11) */}
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        {/* Brand Header */}
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <img
             src="/final_logo.png"
             alt="IPO KING Logo"
             style={{
-              height: '110px',
+              height: '190px',
+              maxHeight: '210px',
               width: 'auto',
-              maxHeight: '110px',
+              maxWidth: '100%',
               objectFit: 'contain',
-              margin: '0 auto 16px auto',
-              display: 'block'
+              margin: '0 auto',
+              display: 'block',
+              filter: 'drop-shadow(0 6px 16px rgba(0, 0, 0, 0.07))'
             }}
           />
-          <h1 style={{
-            fontFamily: 'var(--font-heading)',
-            fontWeight: 800,
-            fontSize: '26px',
-            color: 'var(--text-main)',
-            margin: '0 0 4px 0',
-            letterSpacing: '-0.04em'
-          }}>
-            IPO KING
-          </h1>
-          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
-            Institutional IPO Bidding &amp; Profit Management
-          </p>
         </div>
 
         {/* Error / Alert Notice */}
@@ -325,7 +358,7 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="yugamm15@gmail.com"
+                placeholder="abc@gmail.com"
                 autoComplete="email"
                 style={{ height: '44px' }}
               />

@@ -89,11 +89,14 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
         const val = values[idx] || '';
         if (h.includes('NAME')) obj.name = val;
         else if (h.includes('PAN')) obj.pan = val;
+        else if (h.includes('AADHAAR') || h.includes('AADHAR')) obj.aadhaar = val;
+        else if (h.includes('BIRTH') || h.includes('DOB')) obj.birthdate = val;
         else if (h.includes('BANK')) obj.bank_account = val;
         else if (h.includes('MOBILE') || h.includes('PHONE')) obj.phone = val;
         else if (h.includes('BALANCE')) obj.balance = val;
         else if (h.includes('QTY') || h.includes('LOT')) obj.quantity = val;
         else if (h.includes('AMOUNT') || h.includes('RETURN')) obj.bid_amount = val;
+        else if (h.includes('SHARE') || h.includes('PROFIT')) obj.profit_share_percentage = val;
       });
 
       if (!obj.name && values[1]) obj.name = values[1];
@@ -151,14 +154,14 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
 
   const handleDownloadSample = () => {
     const headers = [
-      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
+      'NO.', 'NAME', 'CA', 'PAN', 'AADHAAR', 'BIRTHDATE', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
       'CODE', 'Mobile Number', 'BALANCE', 'Phone Kono chhe', 'email', 'Phone',
-      'RETURN', 'TDS remarks', 'Beneficiary'
+      'RETURN', 'TDS remarks', 'PROFIT SHARE (%)', 'Beneficiary'
     ];
     const sampleRow = [
-      '101', 'Amit Patel', 'AC123456', 'AAAPA1234X', '1208160012345678', 'HDFC Bank', '50100234567890',
+      '101', 'Amit Patel', 'AC123456', 'AAAPA1234X', '567812349012', '1992-05-15', '1208160012345678', 'HDFC Bank', '50100234567890',
       'amit_p', 'Secret@123', 'IPO-101', '9876543210', '50000', '9876543211',
-      'amit@example.com', '9123456789', '1500', '10% TDS Deducted', 'Priya Patel'
+      'amit@example.com', '9123456789', '1500', '10% TDS Deducted', '40', 'Priya Patel'
     ];
     const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -173,19 +176,20 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
 
   const handleExportCustomers = () => {
     const headers = [
-      'NO.', 'NAME', 'CA', 'PAN', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
+      'NO.', 'NAME', 'CA', 'PAN', 'AADHAAR', 'BIRTHDATE', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
       'CODE', 'Mobile Number', 'BALANCE', 'Phone Kono chhe', 'email', 'Phone',
-      'RETURN', 'TDS remarks', 'Beneficiary'
+      'RETURN', 'TDS remarks', 'PROFIT SHARE (%)', 'Beneficiary'
     ];
 
     const dataToExport = customers && customers.length > 0 ? customers : [
       {
         customer_no: 101, full_name: 'Sample Customer', ca_number: 'AC123456', pan_number: 'ABCDE1234F',
+        aadhaar_number: '567812349012', birthdate: '1992-05-15',
         dpid: '1208160012345678', bank_name: 'HDFC Bank', bank_account_no: '50100234567890', login_id: 'sample_user',
         password_encrypted: '••••••••', code: 'IPO-101', mobile_number: '9876543210',
         balance: 50000, phone_alternate: '9876543211', email: 'sample@email.com',
         phone_other: '9123456789', return_amount: 1500, tds_remarks: '10% TDS Deducted',
-        beneficiary_name: 'Beneficiary Name'
+        profit_share_percentage: 40, beneficiary_name: 'Beneficiary Name'
       }
     ];
 
@@ -194,6 +198,8 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
       `"${(c.full_name || c.name || '').replace(/"/g, '""')}"`,
       `"${(c.ca_number || '').replace(/"/g, '""')}"`,
       `"${(c.pan_number || '').replace(/"/g, '""')}"`,
+      `"${(c.aadhaar_number || c.aadhar_number || '').replace(/"/g, '""')}"`,
+      `"${(c.birthdate || c.dob || '').replace(/"/g, '""')}"`,
       `"${(c.dpid || '').replace(/"/g, '""')}"`,
       `"${(c.bank_name || '').replace(/"/g, '""')}"`,
       `"${(c.bank_account_no || '').replace(/"/g, '""')}"`,
@@ -207,6 +213,7 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
       `"${(c.phone_other || '').replace(/"/g, '""')}"`,
       c.return_amount || 0,
       `"${(c.tds_remarks || '').replace(/"/g, '""')}"`,
+      c.profit_share_percentage !== undefined && c.profit_share_percentage !== null ? c.profit_share_percentage : 40,
       `"${(c.beneficiary_name || '').replace(/"/g, '""')}"`
     ]);
 
@@ -232,6 +239,8 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
     { col: 'NAME', db: 'full_name' },
     { col: 'CA', db: 'ca_number' },
     { col: 'PAN', db: 'pan_number' },
+    { col: 'AADHAAR', db: 'aadhaar_number' },
+    { col: 'BIRTHDATE', db: 'birthdate' },
     { col: 'DPID', db: 'dpid' },
     { col: 'Bank A/c No.', db: 'bank_account_no' },
     { col: 'Login ID', db: 'login_id' },

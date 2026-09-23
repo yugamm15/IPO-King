@@ -348,7 +348,7 @@ export default function PreListingExitModal({
               <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Distribution Breakdown (Per Lot / Bid)
               </span>
-              <span className="badge badge-teal">40% Client &bull; 60% Company</span>
+              <span className="badge badge-teal">Client Profit Share &bull; 10% TDS</span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', textAlign: 'center' }}>
@@ -360,7 +360,7 @@ export default function PreListingExitModal({
               </div>
 
               <div style={{ background: 'rgba(4, 47, 46, 0.02)', padding: '10px 6px', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Client 40%</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Client Share</span>
                 <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>
                   ₹ {sampleClient40.toLocaleString('en-IN')}
                 </strong>
@@ -382,7 +382,7 @@ export default function PreListingExitModal({
             </div>
 
             <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
-              {sampleDesc} &bull; <strong>Company 60% Share: ₹{sampleAdmin60.toLocaleString('en-IN')}</strong>
+              {sampleDesc} &bull; <strong>Treasury Share: ₹{sampleAdmin60.toLocaleString('en-IN')}</strong>
             </div>
           </div>
 

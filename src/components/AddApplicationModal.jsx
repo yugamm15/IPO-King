@@ -15,11 +15,12 @@ import {
   Square,
   Users
 } from 'lucide-react';
-import { supabase, createApplicationBid, createMultipleApplicationBids, fetchCustomersShortList, bulkInsertApplications } from '../services/db.js';
+import { supabase, createApplicationBid, createMultipleApplicationBids, fetchCustomersShortList, bulkInsertApplications, getSystemSettings } from '../services/db.js';
 import { useToast } from '../context/ToastContext.jsx';
 
 export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos = [], selectedIpoId = null }) {
   const { showToast } = useToast();
+  const sysSettings = getSystemSettings();
   const [activeTab, setActiveTab] = useState('single'); // 'single' | 'bulk'
 
   const [customers, setCustomers] = useState([]);
@@ -29,12 +30,14 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
   const [ipoId, setIpoId] = useState(selectedIpoId || '');
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
-  const [category, setCategory] = useState('RETAIL');
+  const [category, setCategory] = useState(sysSettings.default_category || 'RETAIL');
   const [lots, setLots] = useState(1);
-  const [bidAmount, setBidAmount] = useState(15000);
+  const [bidAmount, setBidAmount] = useState(sysSettings.default_retail_bid_amount || 15000);
   const [allotmentStatus, setAllotmentStatus] = useState('Pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
 
   // Bulk Import File State
   const [selectedFile, setSelectedFile] = useState(null);
@@ -82,19 +85,34 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
   if (!isOpen) return null;
 
   const filteredCustomers = customers.filter(c => {
+    if (showOnlySelected && !selectedCustomerIds.includes(c.id)) {
+      return false;
+    }
     const q = customerSearch.toLowerCase().trim();
     return !q ||
       (c.full_name || c.name || '').toLowerCase().includes(q) ||
       (c.pan_number || c.pan || '').toLowerCase().includes(q) ||
+      (c.bank_name || '').toLowerCase().includes(q) ||
       (c.bank_account_no || '').toLowerCase().includes(q);
   });
 
   const toggleSelectAll = () => {
-    if (selectedCustomerIds.length === filteredCustomers.length) {
-      setSelectedCustomerIds([]);
+    const visibleIds = filteredCustomers.map(c => c.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedCustomerIds.includes(id));
+
+    if (allVisibleSelected) {
+      // Deselect visible
+      setSelectedCustomerIds(selectedCustomerIds.filter(id => !visibleIds.includes(id)));
     } else {
-      setSelectedCustomerIds(filteredCustomers.map(c => c.id));
+      // Select all visible (preserving already selected others)
+      const merged = Array.from(new Set([...selectedCustomerIds, ...visibleIds]));
+      setSelectedCustomerIds(merged);
     }
+  };
+
+  const clearAllSelected = () => {
+    setSelectedCustomerIds([]);
+    setShowOnlySelected(false);
   };
 
   const toggleCustomer = (id) => {
@@ -482,35 +500,85 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
 
             {/* 3. Customer Selection Multi-Picker */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label className="input-label" style={{ margin: 0 }}>
-                  Select Customers ({selectedCustomerIds.length} Selected)
-                </label>
-                <button
-                  type="button"
-                  onClick={toggleSelectAll}
-                  style={{ background: 'none', border: 'none', color: 'var(--brand-accent)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  {selectedCustomerIds.length === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All Filtered'}
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label className="input-label" style={{ margin: 0 }}>
+                    Select Customers
+                  </label>
+                  <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                    {selectedCustomerIds.length} Selected
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {selectedCustomerIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowOnlySelected(!showOnlySelected)}
+                      style={{
+                        background: showOnlySelected ? 'rgba(4, 47, 46, 0.12)' : 'none',
+                        border: '1px solid var(--panel-border)',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        color: 'var(--text-main)',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {showOnlySelected ? 'Show All' : `Show Selected (${selectedCustomerIds.length})`}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    style={{ background: 'none', border: 'none', color: 'var(--brand-accent)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {filteredCustomers.length > 0 && filteredCustomers.every(c => selectedCustomerIds.includes(c.id))
+                      ? 'Deselect Visible'
+                      : `Select All Visible (${filteredCustomers.length})`}
+                  </button>
+
+                  {selectedCustomerIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllSelected}
+                      style={{ background: 'none', border: 'none', color: 'var(--danger-text)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Search input for customer picker */}
-              <div style={{ position: 'relative', marginBottom: '10px' }}>
+              {/* Search input with live count indicator */}
+              <div style={{ position: 'relative', marginBottom: '8px' }}>
                 <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
                 <input
                   type="text"
-                  placeholder="Search customer by name, PAN, bank..."
+                  placeholder="Search customer by name, PAN, bank name..."
                   className="input-field"
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)}
-                  style={{ paddingLeft: '32px', height: '36px', fontSize: '13px' }}
+                  style={{ paddingLeft: '32px', paddingRight: '90px', height: '38px', fontSize: '13px' }}
                 />
+                <span style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: '11px',
+                  color: 'var(--text-dim)',
+                  pointerEvents: 'none'
+                }}>
+                  {filteredCustomers.length} of {customers.length}
+                </span>
               </div>
 
               {/* List of customer cards */}
               <div style={{
-                maxHeight: '180px',
+                maxHeight: '220px',
                 overflowY: 'auto',
                 border: '1px solid var(--panel-border)',
                 borderRadius: '14px',
@@ -518,10 +586,10 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
                 padding: '6px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px'
+                gap: '5px'
               }}>
                 {loadingCustomers ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
                     Loading customer roster...
                   </div>
                 ) : filteredCustomers.length > 0 ? (
@@ -535,38 +603,59 @@ export default function AddApplicationModal({ isOpen, onClose, onSuccess, ipos =
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '8px 12px',
+                          padding: '9px 12px',
                           borderRadius: '10px',
-                          background: isSelected ? 'rgba(4, 47, 46, 0.08)' : 'var(--panel-bg)',
-                          border: '1px solid',
-                          borderColor: isSelected ? 'var(--primary)' : 'var(--panel-border)',
+                          background: isSelected ? 'rgba(13, 148, 136, 0.08)' : 'var(--panel-bg)',
+                          border: '1.5px solid',
+                          borderColor: isSelected ? 'var(--brand-accent)' : 'var(--panel-border)',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           {isSelected ? (
-                            <CheckSquare size={16} style={{ color: 'var(--primary)' }} />
+                            <CheckSquare size={16} style={{ color: 'var(--brand-accent)' }} />
                           ) : (
                             <Square size={16} style={{ color: 'var(--text-dim)' }} />
                           )}
                           <div>
                             <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>{c.full_name || c.name}</strong>
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                              PAN: <code>{c.pan_number || c.pan || '—'}</code>
+                              PAN: <code style={{ color: 'var(--text-main)', fontWeight: 600 }}>{c.pan_number || c.pan || '—'}</code>
                             </span>
                           </div>
                         </div>
 
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {c.bank_name || c.bank_account_no || 'Demat Active'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="badge badge-teal" style={{ fontSize: '10.5px', padding: '1px 6px' }}>
+                            {c.profit_share_percentage !== undefined && c.profit_share_percentage !== null ? `${c.profit_share_percentage}%` : '40%'} Share
+                          </span>
+                          {c.bank_name && (
+                            <span style={{
+                              fontSize: '11px',
+                              background: 'rgba(4, 47, 46, 0.05)',
+                              color: 'var(--text-muted)',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              fontWeight: 600
+                            }}>
+                              {c.bank_name}
+                            </span>
+                          )}
+                          {isSelected && (
+                            <span className="badge badge-teal" style={{ fontSize: '10px', padding: '1px 6px' }}>
+                              Selected
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                    No customers found matching search.
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                    {showOnlySelected
+                      ? 'No selected customers match your filter.'
+                      : 'No customers found matching search.'}
                   </div>
                 )}
               </div>

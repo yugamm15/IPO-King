@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:api": "node services/apiServer.js",
+    "dev:api": "node --watch services/apiServer.js",
     "dev:vercel": "npx --yes vercel@latest dev --listen 3001",
     "vercel-install": "node ./scripts/vercel-install-fix.cjs",
     "install": "node ./scripts/vercel-install-fix.cjs",

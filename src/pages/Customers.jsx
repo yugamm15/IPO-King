@@ -28,6 +28,8 @@ const INITIAL_COLUMNS = [
   { id: 'full_name', label: 'NAME', visible: true },
   { id: 'ca_number', label: 'CA NUMBER', visible: true },
   { id: 'pan_number', label: 'PAN NUMBER', visible: true },
+  { id: 'aadhaar_number', label: 'AADHAAR NUMBER', visible: true },
+  { id: 'birthdate', label: 'BIRTHDATE', visible: true },
   { id: 'dpid', label: 'DPID (DEMAT)', visible: true },
   { id: 'bank_name', label: 'BANK NAME', visible: true },
   { id: 'bank_account_no', label: 'BANK A/C NO.', visible: true },
@@ -41,6 +43,7 @@ const INITIAL_COLUMNS = [
   { id: 'phone_other', label: 'PHONE OTHER', visible: true },
   { id: 'return_amount', label: 'RETURN AMOUNT (₹)', visible: true },
   { id: 'tds_remarks', label: 'TDS REMARKS', visible: true },
+  { id: 'profit_share_percentage', label: 'PROFIT SHARE (%)', visible: true },
   { id: 'beneficiary_name', label: 'BENEFICIARIES', visible: true }
 ];
 
@@ -185,6 +188,9 @@ export default function Customers({ onOpenExcelModal }) {
     return customers.filter(c =>
       (c.full_name && c.full_name.toLowerCase().includes(q)) ||
       (c.pan_number && c.pan_number.toLowerCase().includes(q)) ||
+      (c.aadhaar_number && c.aadhaar_number.includes(q)) ||
+      (c.aadhar_number && String(c.aadhar_number).includes(q)) ||
+      (c.birthdate && String(c.birthdate).toLowerCase().includes(q)) ||
       (c.bank_name && c.bank_name.toLowerCase().includes(q)) ||
       (c.bank_account_no && c.bank_account_no.includes(q)) ||
       (c.mobile_number && c.mobile_number.includes(q)) ||
@@ -419,6 +425,8 @@ export default function Customers({ onOpenExcelModal }) {
               {isColVisible('full_name') && <th>NAME</th>}
               {isColVisible('ca_number') && <th>CA NUMBER</th>}
               {isColVisible('pan_number') && <th>PAN NUMBER</th>}
+              {isColVisible('aadhaar_number') && <th>AADHAAR NUMBER</th>}
+              {isColVisible('birthdate') && <th>BIRTHDATE</th>}
               {isColVisible('dpid') && <th>DPID (DEMAT)</th>}
               {isColVisible('bank_name') && <th>BANK NAME</th>}
               {isColVisible('bank_account_no') && <th>BANK A/C NO.</th>}
@@ -432,6 +440,7 @@ export default function Customers({ onOpenExcelModal }) {
               {isColVisible('phone_other') && <th>PHONE OTHER</th>}
               {isColVisible('return_amount') && <th>RETURN AMOUNT (₹)</th>}
               {isColVisible('tds_remarks') && <th>TDS REMARKS</th>}
+              {isColVisible('profit_share_percentage') && <th>PROFIT SHARE (%)</th>}
               {isColVisible('beneficiary_name') && <th>BENEFICIARIES</th>}
               <th style={{ textAlign: 'center' }}>ACTIONS</th>
             </tr>
@@ -468,6 +477,20 @@ export default function Customers({ onOpenExcelModal }) {
                       <code style={{ fontWeight: 600, color: 'var(--primary)', background: 'rgba(4, 47, 46, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
                         {c.pan_number || '—'}
                       </code>
+                    </td>
+                  )}
+                  {isColVisible('aadhaar_number') && (
+                    <td>
+                      <code style={{ fontWeight: 600, color: 'var(--brand-accent)', background: 'rgba(4, 47, 46, 0.05)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.05em' }}>
+                        {c.aadhaar_number ? c.aadhaar_number.replace(/(\d{4})(?=\d)/g, '$1 ') : (c.aadhar_number ? String(c.aadhar_number).replace(/(\d{4})(?=\d)/g, '$1 ') : '—')}
+                      </code>
+                    </td>
+                  )}
+                  {isColVisible('birthdate') && (
+                    <td>
+                      <span style={{ fontSize: '12.5px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                        {c.birthdate ? new Date(c.birthdate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (c.dob || '—')}
+                      </span>
                     </td>
                   )}
                   {isColVisible('dpid') && <td><span style={{ fontSize: '12px', fontFamily: 'monospace' }}>{c.dpid || '—'}</span></td>}
@@ -510,6 +533,13 @@ export default function Customers({ onOpenExcelModal }) {
                     </td>
                   )}
                   {isColVisible('tds_remarks') && <td><span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{c.tds_remarks || '—'}</span></td>}
+                  {isColVisible('profit_share_percentage') && (
+                    <td>
+                      <span className="badge badge-teal" style={{ fontWeight: 700 }}>
+                        {c.profit_share_percentage !== undefined && c.profit_share_percentage !== null ? `${c.profit_share_percentage}%` : '40%'}
+                      </span>
+                    </td>
+                  )}
                   {isColVisible('beneficiary_name') && (
                     <td>
                       <span style={{ fontSize: '12px', maxWidth: '160px', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

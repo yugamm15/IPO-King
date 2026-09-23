@@ -2,11 +2,32 @@
  * IPO KING - Persistent Stale-While-Revalidate (SWR) Instant Database Driver
  */
 import { createClient } from '@supabase/supabase-js';
+import { loadSession } from './session.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://munohtnnfozpznsawbvn.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create Supabase client with dynamic Bearer session token forwarding
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  global: {
+    fetch: (url, options = {}) => {
+      const session = loadSession();
+      const token = session?.token;
+      if (token) {
+        const headers = new Headers(options.headers || {});
+        if (!headers.has('Authorization')) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+        options.headers = headers;
+      }
+      return fetch(url, options);
+    }
+  }
+});
 
 export const dbConfig = {
   provider: 'supabase',
@@ -51,11 +72,114 @@ export const DEFAULT_BANKS = [
   { id: 18, bank_name: 'Bandhan Bank', ifsc_prefix: 'BDBL' }
 ];
 
+export const DEFAULT_SYSTEM_SETTINGS = {
+  default_customer_profit_pct: 40,
+  default_company_profit_pct: 60,
+  default_tds_pct: 10,
+  enable_tds_deduction: true,
+  default_retail_bid_amount: 15000,
+  default_exit_mode: 'MARKET',
+  default_category: 'RETAIL',
+  company_name: 'IPO KING Enterprise'
+};
+
+export function getSystemSettings() {
+  const cached = getStoredCache('system_settings');
+  if (cached && typeof cached === 'object') {
+    const custPct = Number(cached.default_customer_profit_pct) >= 0 ? Number(cached.default_customer_profit_pct) : DEFAULT_SYSTEM_SETTINGS.default_customer_profit_pct;
+    return {
+      ...DEFAULT_SYSTEM_SETTINGS,
+      ...cached,
+      default_customer_profit_pct: custPct,
+      default_company_profit_pct: 100 - custPct,
+      default_tds_pct: Number(cached.default_tds_pct) >= 0 ? Number(cached.default_tds_pct) : DEFAULT_SYSTEM_SETTINGS.default_tds_pct,
+      enable_tds_deduction: cached.enable_tds_deduction !== undefined ? Boolean(cached.enable_tds_deduction) : true,
+      default_retail_bid_amount: Number(cached.default_retail_bid_amount) || DEFAULT_SYSTEM_SETTINGS.default_retail_bid_amount,
+      default_exit_mode: cached.default_exit_mode || DEFAULT_SYSTEM_SETTINGS.default_exit_mode,
+      default_category: cached.default_category || DEFAULT_SYSTEM_SETTINGS.default_category
+    };
+  }
+  return { ...DEFAULT_SYSTEM_SETTINGS };
+}
+
+export async function fetchSystemSettings(force = false) {
+  const current = getSystemSettings();
+  if (!force && dbCache.settings) {
+    return dbCache.settings;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      const custPct = Number(data.default_customer_profit_pct) >= 0 ? Number(data.default_customer_profit_pct) : DEFAULT_SYSTEM_SETTINGS.default_customer_profit_pct;
+      const merged = {
+        ...DEFAULT_SYSTEM_SETTINGS,
+        ...data,
+        default_customer_profit_pct: custPct,
+        default_company_profit_pct: 100 - custPct,
+        default_tds_pct: Number(data.default_tds_pct) >= 0 ? Number(data.default_tds_pct) : DEFAULT_SYSTEM_SETTINGS.default_tds_pct,
+        enable_tds_deduction: data.enable_tds_deduction !== undefined ? Boolean(data.enable_tds_deduction) : true,
+        default_retail_bid_amount: Number(data.default_retail_bid_amount) || DEFAULT_SYSTEM_SETTINGS.default_retail_bid_amount,
+        default_exit_mode: data.default_exit_mode || DEFAULT_SYSTEM_SETTINGS.default_exit_mode,
+        default_category: data.default_category || DEFAULT_SYSTEM_SETTINGS.default_category
+      };
+      dbCache.settings = merged;
+      setStoredCache('system_settings', merged);
+      return merged;
+    }
+  } catch (_) {}
+
+  dbCache.settings = current;
+  return current;
+}
+
+export async function saveSystemSettings(newSettings = {}) {
+  const current = getSystemSettings();
+  const custPct = Number(newSettings.default_customer_profit_pct) >= 0 ? Number(newSettings.default_customer_profit_pct) : current.default_customer_profit_pct;
+  const tdsPct = Number(newSettings.default_tds_pct) >= 0 ? Number(newSettings.default_tds_pct) : current.default_tds_pct;
+  const enableTds = newSettings.enable_tds_deduction !== undefined ? Boolean(newSettings.enable_tds_deduction) : current.enable_tds_deduction;
+
+  const merged = {
+    ...current,
+    ...newSettings,
+    default_customer_profit_pct: custPct,
+    default_company_profit_pct: 100 - custPct,
+    default_tds_pct: tdsPct,
+    enable_tds_deduction: enableTds,
+    default_retail_bid_amount: Number(newSettings.default_retail_bid_amount) || current.default_retail_bid_amount,
+    default_exit_mode: newSettings.default_exit_mode || current.default_exit_mode,
+    default_category: newSettings.default_category || current.default_category,
+    updated_at: new Date().toISOString()
+  };
+
+  dbCache.settings = merged;
+  setStoredCache('system_settings', merged);
+
+  try {
+    await supabase.from('system_settings').upsert([{
+      id: 1,
+      ...merged
+    }], { onConflict: 'id' });
+  } catch (_) {}
+
+  invalidateDbCache();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ipoking-settings-updated', { detail: merged }));
+  }
+  return merged;
+}
+
 const dbCache = {
   ipos: getStoredCache('ipos'),
   applications: getStoredCache('applications'),
   customers: getStoredCache('customers'),
   banks: getStoredCache('banks') || DEFAULT_BANKS,
+  settings: getStoredCache('system_settings') || DEFAULT_SYSTEM_SETTINGS,
   stats: getStoredCache('stats'),
   iposTimestamp: Date.now(),
   appsTimestamp: Date.now(),
@@ -89,6 +213,7 @@ export function invalidateDbCache() {
   fetchCustomersShortList(true).catch(() => {});
   fetchBanks(true).catch(() => {});
   fetchDashboardStats(true).catch(() => {});
+  fetchSystemSettings(true).catch(() => {});
 }
 
 export async function fetchLiveIpos(force = false) {
@@ -105,15 +230,14 @@ export async function fetchLiveIpos(force = false) {
     );
     if (!res.error && res.data) {
       const mapped = res.data.map(item => {
-        const match = (item.gain_est || '').match(/Listed @ ₹([0-9.]+)/);
-        const parsedPrice = match ? Number(match[1]) : (Number(item.listing_price) || 0);
+        const rates = parseIpoExitRates(item);
         return {
           ...item,
-          listing_price: parsedPrice,
-          exit_mode: item.exit_mode || 'MARKET',
-          kostak_rate: Number(item.kostak_rate) || 0,
-          sauda_rate: Number(item.sauda_rate) || 0,
-          pre_listing_price: Number(item.pre_listing_price) || 0
+          listing_price: rates.listingPrice,
+          exit_mode: item.exit_mode || rates.exitMode || 'MARKET',
+          kostak_rate: Number(item.kostak_rate) || rates.kostakRate,
+          sauda_rate: Number(item.sauda_rate) || rates.saudaRate,
+          pre_listing_price: Number(item.pre_listing_price) || rates.preListingPrice
         };
       });
 
@@ -130,19 +254,43 @@ export async function fetchLiveIpos(force = false) {
 
 export async function fetchApplicationsLedger(force = false) {
   // 0ms Instant Cache Return
-  if (!force && dbCache.applications) {
+  if (!force && dbCache.applications && dbCache.applications.length > 0) {
     fetchApplicationsLedger(true).catch(() => {});
     return dbCache.applications;
   }
 
   try {
-    const res = await queryWithTimeout(
+    // 1. Primary Attempt: Full relational join
+    let res = await queryWithTimeout(
       supabase
         .from('applications')
-        .select('*, customers(full_name, pan_number, bank_account_no, bank_name, dpid), ipos(*)')
+        .select('*, customers(*), ipos(*)')
         .order('created_at', { ascending: false }),
-      3000
+      3500
     );
+
+    // 2. Fallback: If relational query fails for any reason, fetch tables independently and merge in-memory
+    if (res.error || !res.data) {
+      const [appRes, custRes, ipoRes] = await Promise.all([
+        queryWithTimeout(supabase.from('applications').select('*').order('created_at', { ascending: false }), 3000),
+        queryWithTimeout(supabase.from('customers').select('*'), 3000),
+        queryWithTimeout(supabase.from('ipos').select('*'), 3000)
+      ]);
+
+      if (!appRes.error && appRes.data) {
+        const custMap = new Map((custRes.data || []).map(c => [String(c.id), c]));
+        const ipoMap = new Map((ipoRes.data || []).map(i => [String(i.id), i]));
+
+        res = {
+          data: appRes.data.map(a => ({
+            ...a,
+            customers: custMap.get(String(a.customer_id)) || null,
+            ipos: ipoMap.get(String(a.ipo_id)) || null
+          })),
+          error: null
+        };
+      }
+    }
 
     if (res.error || !res.data) {
       return dbCache.applications || [];
@@ -153,34 +301,26 @@ export async function fetchApplicationsLedger(force = false) {
     const mapped = res.data.map(item => {
       const override = storedOverrides[item.id] || {};
       const ipoData = item.ipos || {};
+      const ipoRates = parseIpoExitRates(ipoData);
 
       const exitMode = override.exit_mode || item.exit_mode || ipoData.exit_mode || 'MARKET';
-      const kostakRate = Number(override.kostak_rate ?? item.kostak_rate ?? ipoData.kostak_rate) || 0;
-      const saudaRate = Number(override.sauda_rate ?? item.sauda_rate ?? ipoData.sauda_rate) || 0;
-
-      // Extract listing / sell price from overrides, db fields, or IPO gain_est tag
-      let listingPrice = Number(override.exit_price ?? item.exit_price ?? ipoData.listing_price) || 0;
-      if (!listingPrice && ipoData.gain_est) {
-        const match = String(ipoData.gain_est).match(/Listed @ ₹([0-9.]+)/);
-        if (match) listingPrice = Number(match[1]);
-      }
+      const kostakRate = Number(override.kostak_rate ?? item.kostak_rate ?? ipoData.kostak_rate) || ipoRates.kostakRate;
+      const saudaRate = Number(override.sauda_rate ?? item.sauda_rate ?? ipoData.sauda_rate) || ipoRates.saudaRate;
+      const listingPrice = Number(override.exit_price ?? item.exit_price ?? ipoData.listing_price) || ipoRates.listingPrice;
+      const preListingPrice = Number(override.pre_listing_price ?? item.pre_listing_price ?? ipoData.pre_listing_price) || ipoRates.preListingPrice;
 
       const exitParams = {
         exit_mode: exitMode,
         exit_price: listingPrice,
         listing_price: listingPrice,
-        pre_listing_price: Number(override.pre_listing_price ?? item.pre_listing_price ?? ipoData.pre_listing_price) || listingPrice,
+        pre_listing_price: preListingPrice,
         kostak_rate: kostakRate,
         sauda_rate: saudaRate
       };
 
-      const calculated = calculateExitMetrics(exitMode, exitParams, item, ipoData);
-
-      const profitAmt = Number(item.profit_amount) > 0 ? Number(item.profit_amount) : calculated.profit_amount;
-      const clientShare = Number(item.client_share_60) > 0 ? Number(item.client_share_60) : calculated.client_share_60;
-      const adminShare = Number(item.admin_share_40) > 0 ? Number(item.admin_share_40) : calculated.admin_share_40;
-      const tds = Number(item.tds_10) > 0 ? Number(item.tds_10) : calculated.tds_10;
-      const net = Number(item.net_payout) > 0 ? Number(item.net_payout) : calculated.net_payout;
+      const sysSettings = getSystemSettings();
+      const custProfitSharePct = Number(item.customers?.profit_share_percentage ?? item.profit_share_percentage ?? sysSettings.default_customer_profit_pct);
+      const calculated = calculateExitMetrics(exitMode, exitParams, { ...item, profit_share_percentage: custProfitSharePct }, ipoData);
 
       const lotSize = Number(ipoData.lot_size) || 1;
       const rawLots = Number(item.lots_applied) || (item.quantity && lotSize > 1 ? Math.floor(Number(item.quantity) / lotSize) : 1) || 1;
@@ -189,16 +329,16 @@ export async function fetchApplicationsLedger(force = false) {
         id: item.id,
         customer_id: item.customer_id,
         ipo_id: item.ipo_id,
-        customer_name: item.customers?.full_name || 'Customer',
-        pan: item.customers?.pan_number || '—',
+        customer_name: item.customers?.full_name || item.customers?.name || item.customer_name || 'Customer',
+        pan: item.customers?.pan_number || item.pan || '—',
         bank_name: item.customers?.bank_name || item.bank_name || '—',
-        bank_account: item.customers?.bank_account_no || '—',
-        ipo_name: ipoData.ipo_name || 'IPO Offering',
+        bank_account: item.customers?.bank_account_no || item.bank_account || '—',
+        ipo_name: ipoData.ipo_name || item.ipo_name || 'IPO Offering',
         lots_applied: rawLots,
         quantity: Number(item.quantity) || (rawLots * lotSize),
         bid_amount: item.bid_amount || 15000,
         allotment_status: item.allotment_status || 'Pending',
-        allotted_quantity: item.allotted_quantity || (String(item.allotment_status).toLowerCase().includes('full') ? Number(item.quantity) : 0),
+        allotted_quantity: calculated.allotted_quantity,
         exit_mode: exitMode,
         kostak_rate: kostakRate,
         sauda_rate: saudaRate,
@@ -207,13 +347,15 @@ export async function fetchApplicationsLedger(force = false) {
         price_band_min: Number(ipoData.price_band_min) || 0,
         lot_size: lotSize,
         issue_price: Number(ipoData.price_band_max) || Number(ipoData.price_band_min) || (item.bid_amount && item.quantity ? Math.round(Number(item.bid_amount) / Number(item.quantity)) : 100),
-        profit_amount: profitAmt,
-        client_share_60: clientShare,
-        admin_share_40: adminShare,
-        tds_10: tds,
-        net_payout: net,
+        profit_amount: calculated.profit_amount,
+        client_share_60: calculated.client_share_60,
+        admin_share_40: calculated.admin_share_40,
+        tds_10: calculated.tds_10,
+        net_payout: calculated.net_payout,
         settlement_remarks: calculated.settlement_remarks,
         dpid: item.customers?.dpid || '—',
+        profit_share_percentage: custProfitSharePct,
+        customer_profit_share: custProfitSharePct,
         ipo_status: ipoData.status || 'open',
         listing_date: ipoData.listing_date || '—'
       };
@@ -224,13 +366,14 @@ export async function fetchApplicationsLedger(force = false) {
     setStoredCache('applications', mapped);
     return mapped;
   } catch (err) {
+    console.error('Error fetching applications ledger:', err);
     return dbCache.applications || [];
   }
 }
 
 export async function fetchCustomersShortList(force = false) {
   // 0ms Instant Cache Return
-  if (!force && dbCache.customers) {
+  if (!force && dbCache.customers && dbCache.customers.length > 0) {
     fetchCustomersShortList(true).catch(() => {});
     return dbCache.customers;
   }
@@ -239,7 +382,7 @@ export async function fetchCustomersShortList(force = false) {
     const res = await queryWithTimeout(
       supabase
         .from('customers')
-        .select('id, customer_no, full_name, name, pan_number, bank_account_no, bank_name, dpid, mobile_number')
+        .select('*')
         .order('full_name', { ascending: true }),
       3000
     );
@@ -499,16 +642,19 @@ export async function updateApplicationAllotmentStatus(applicationId, allotmentS
     try {
       const { data: fullApp } = await supabase
         .from('applications')
-        .select('*, ipos(*)')
+        .select('*, customers(*), ipos(*)')
         .eq('id', applicationId)
         .single();
 
       if (fullApp) {
         const ipoData = fullApp.ipos || {};
+        const sysSettings = getSystemSettings();
         const profitAmt = Number(updateData.profit_amount ?? fullApp.profit_amount) || 0;
-        const clientShare = Number(updateData.client_share_60 ?? fullApp.client_share_60) || Math.round(profitAmt * 0.40);
-        const adminShare = Number(updateData.admin_share_40 ?? fullApp.admin_share_40) || Math.round(profitAmt * 0.60);
-        const tds = Number(updateData.tds_10 ?? fullApp.tds_10) || Math.round(clientShare * 0.10);
+        const custPct = Number(fullApp.customers?.profit_share_percentage ?? fullApp.profit_share_percentage ?? sysSettings.default_customer_profit_pct) / 100;
+        const clientShare = Number(updateData.client_share_60 ?? fullApp.client_share_60) || Math.round(profitAmt * custPct);
+        const adminShare = Number(updateData.admin_share_40 ?? fullApp.admin_share_40) || Math.round(profitAmt * (1 - custPct));
+        const tdsRate = sysSettings.enable_tds_deduction ? (Number(sysSettings.default_tds_pct) || 10) / 100 : 0;
+        const tds = Number(updateData.tds_10 ?? fullApp.tds_10) || (clientShare > 0 ? Math.round(clientShare * tdsRate) : 0);
         const net = Number(updateData.net_payout ?? fullApp.net_payout) || Math.max(0, clientShare - tds);
 
         await supabase.from('ipo_allotments').upsert([{
@@ -552,46 +698,121 @@ export async function deleteApplication(applicationId) {
   }
 }
 
+export function parseIpoExitRates(ipoData = {}) {
+  const issueMax = Number(ipoData?.price_band_max) || Number(ipoData?.price_band_min) || Number(ipoData?.issue_price) || 100;
+  let listingPrice = Number(ipoData?.listing_price) || 0;
+  let preListingPrice = Number(ipoData?.pre_listing_price) || 0;
+  let kostakRate = Number(ipoData?.kostak_rate) || 0;
+  let saudaRate = Number(ipoData?.sauda_rate) || 0;
+  let exitMode = ipoData?.exit_mode || 'MARKET';
+
+  const gainEstStr = String(ipoData?.gain_est || '').trim();
+
+  if (gainEstStr) {
+    const listedMatch = gainEstStr.match(/Listed @ ₹([0-9.]+)/i);
+    if (listedMatch) {
+      listingPrice = Number(listedMatch[1]);
+      exitMode = 'MARKET';
+    }
+
+    const offMktMatch = gainEstStr.match(/Off-Market @ ₹([0-9.]+)/i);
+    if (offMktMatch) {
+      preListingPrice = Number(offMktMatch[1]);
+      exitMode = 'PRE_LISTING';
+    }
+
+    const kostakMatch = gainEstStr.match(/Kostak.*?₹([0-9.]+)/i);
+    if (kostakMatch) {
+      kostakRate = Number(kostakMatch[1]);
+      exitMode = 'KOSTAK';
+    }
+
+    const saudaMatch = gainEstStr.match(/Sauda.*?₹([0-9.]+)/i);
+    if (saudaMatch) {
+      saudaRate = Number(saudaMatch[1]);
+      exitMode = 'SAUDA';
+    }
+
+    // Parse GMP or estimated gain like "+₹150/sh Est." or "+150" or "+₹85" or "+45%"
+    if (!listingPrice) {
+      const gmpMatch = gainEstStr.match(/\+₹?([0-9.]+)/);
+      if (gmpMatch) {
+        const estGain = Number(gmpMatch[1]);
+        if (gainEstStr.includes('%')) {
+          listingPrice = Math.round(issueMax * (1 + estGain / 100));
+        } else {
+          listingPrice = issueMax + estGain;
+        }
+      }
+    }
+  }
+
+  // Fallback estimated listing price if not set (default 35% listing premium)
+  const defaultListingPrice = listingPrice || Math.round(issueMax * 1.35);
+
+  return {
+    issuePrice: issueMax,
+    listingPrice: defaultListingPrice,
+    preListingPrice: preListingPrice || defaultListingPrice,
+    kostakRate: kostakRate || 800,
+    saudaRate: saudaRate || 12000,
+    exitMode
+  };
+}
+
 export function calculateExitMetrics(modeOrParams, exitParams = {}, app = {}, ipo = {}) {
-  let exitMode = 'KOSTAK';
+  let exitMode = 'MARKET';
   let params = {};
 
   if (typeof modeOrParams === 'object' && modeOrParams !== null) {
     params = modeOrParams;
-    exitMode = String(modeOrParams.exit_mode || 'KOSTAK').toUpperCase();
+    exitMode = String(modeOrParams.exit_mode || 'MARKET').toUpperCase();
   } else {
-    exitMode = String(modeOrParams || 'KOSTAK').toUpperCase();
+    exitMode = String(modeOrParams || 'MARKET').toUpperCase();
     params = typeof exitParams === 'object' && exitParams !== null ? exitParams : {};
   }
 
-  const lotSize = Number(ipo?.lot_size) || 1;
-  const rawLots = Number(app.lots_applied) || (Number(app.quantity) >= lotSize ? Math.floor(Number(app.quantity) / lotSize) : 1) || 1;
-  const rawQty = Number(app.quantity) || (rawLots * lotSize);
+  const lotSize = Number(ipo?.lot_size) || (app.quantity && app.lots_applied ? Math.floor(Number(app.quantity) / Number(app.lots_applied)) : 50) || 50;
+  const rawLots = Number(app.lots_applied) || (Number(app.quantity) >= lotSize && lotSize > 1 ? Math.floor(Number(app.quantity) / lotSize) : 1) || 1;
+  const totalAppliedQty = Number(app.quantity) || (rawLots * lotSize);
 
-  const statusStr = String(app.allotment_status || '').toLowerCase();
-  const isExplicitRejected = statusStr.includes('reject') || statusStr.includes('not allotted') || statusStr === 'unallotted';
+  const statusStr = String(app.allotment_status || app.status || 'Pending').toLowerCase();
+  const isExplicitRejected = statusStr.includes('reject') || statusStr.includes('not allotted') || statusStr === 'unallotted' || statusStr === 'not';
+  const isPartial = statusStr.includes('partial');
+
+  // Determine allotted quantity
+  let allottedQty = 0;
+  if (isExplicitRejected) {
+    allottedQty = 0;
+  } else if (isPartial) {
+    allottedQty = Number(app.allotted_quantity) || Math.max(1, Math.floor(totalAppliedQty / 2));
+  } else {
+    allottedQty = Number(app.allotted_quantity) || totalAppliedQty;
+  }
+
+  const rates = parseIpoExitRates(ipo);
+  const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || (app.bid_amount && app.quantity ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : rates.issuePrice);
 
   let grossProfit = 0;
   let exitPrice = 0;
   let settlementRemarks = '';
 
   if (exitMode === 'KOSTAK') {
-    const rate = Number(params.kostak_rate) || 0;
+    const rate = Number(params.kostak_rate ?? app.kostak_rate ?? ipo?.kostak_rate) || rates.kostakRate;
     grossProfit = Math.round(rate * rawLots);
     exitPrice = rate;
     settlementRemarks = `Kostak Exit @ ₹${rate}/lot (Total ₹${grossProfit.toLocaleString('en-IN')})`;
   } else if (exitMode === 'SAUDA') {
-    const rate = Number(params.sauda_rate) || 0;
-    grossProfit = isExplicitRejected ? 0 : Math.round(rate * rawLots);
+    const rate = Number(params.sauda_rate ?? app.sauda_rate ?? ipo?.sauda_rate) || rates.saudaRate;
+    grossProfit = isExplicitRejected ? 0 : Math.round(rate * rawLots * (isPartial ? (allottedQty / totalAppliedQty) : 1));
     exitPrice = rate;
     settlementRemarks = isExplicitRejected
       ? 'Subject to Sauda Void (Rejected)'
       : `Subject to Sauda @ ₹${rate}/lot (Total ₹${grossProfit.toLocaleString('en-IN')})`;
   } else if (exitMode === 'PRE_LISTING') {
-    const price = Number(params.pre_listing_price) || 0;
-    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || (app.bid_amount && app.quantity ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : 100);
-    const diffPerShare = price > 0 ? (price - issueMax) : 0;
-    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * rawQty);
+    const price = Number(params.pre_listing_price ?? params.exit_price ?? app.exit_price ?? ipo?.pre_listing_price) || rates.preListingPrice;
+    const diffPerShare = price - issueMax;
+    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * allottedQty);
     exitPrice = price;
     settlementRemarks = isExplicitRejected
       ? 'Pre-Listing Void (Rejected)'
@@ -600,23 +821,35 @@ export function calculateExitMetrics(modeOrParams, exitParams = {}, app = {}, ip
           : `Off-Market Sale @ ₹${price}/sh (+₹${diffPerShare}/sh)`);
   } else {
     // Standard MARKET listing
-    const price = Number(params.listing_price) || Number(params.exit_price) || Number(ipo?.listing_price) || 0;
-    const issueMax = Number(ipo?.price_band_max) || Number(ipo?.price_band_min) || (app.bid_amount && app.quantity ? Math.round(Number(app.bid_amount) / Number(app.quantity)) : 100);
-    const diffPerShare = price > 0 ? (price - issueMax) : 0;
-    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * rawQty);
+    const price = Number(params.listing_price ?? params.exit_price ?? app.exit_price ?? ipo?.listing_price) || rates.listingPrice;
+    const diffPerShare = price - issueMax;
+    grossProfit = isExplicitRejected ? 0 : Math.round(diffPerShare * allottedQty);
     exitPrice = price;
     settlementRemarks = isExplicitRejected
-      ? 'No Allotment'
+      ? 'No Allotment (Refunded)'
       : (diffPerShare < 0
           ? `Exchange Listed @ ₹${price}/sh (-₹${Math.abs(diffPerShare)}/sh Discount/Loss)`
           : `Exchange Listed @ ₹${price}/sh (+₹${diffPerShare}/sh)`);
   }
 
-  // 40% Customer Share, 60% Company Share, 10% TDS ONLY on Positive Profit
-  const custGrossShare = Math.round(grossProfit * 0.40);
-  const adminShare = Math.round(grossProfit * 0.60);
-  const tds10 = custGrossShare > 0 ? Math.round(custGrossShare * 0.10) : 0;
-  const netPayout = custGrossShare > 0 ? (custGrossShare - tds10) : custGrossShare;
+  const sysSettings = getSystemSettings();
+
+  // Dynamic Customer Profit Share (Default from Settings or custom per customer)
+  const clientProfitPct = Number(
+    app?.profit_share_percentage ??
+    app?.customers?.profit_share_percentage ??
+    app?.customer_profit_share ??
+    sysSettings.default_customer_profit_pct ??
+    40
+  );
+  const clientFraction = clientProfitPct / 100;
+
+  const custGrossShare = Math.round(grossProfit * clientFraction);
+  const adminShare = grossProfit - custGrossShare;
+
+  const tdsPct = sysSettings.enable_tds_deduction ? (Number(sysSettings.default_tds_pct) || 10) / 100 : 0;
+  const tdsAmount = custGrossShare > 0 ? Math.round(custGrossShare * tdsPct) : 0;
+  const netPayout = custGrossShare > 0 ? (custGrossShare - tdsAmount) : custGrossShare;
 
   return {
     exit_mode: exitMode,
@@ -624,9 +857,12 @@ export function calculateExitMetrics(modeOrParams, exitParams = {}, app = {}, ip
     profit_amount: grossProfit,
     client_share_60: custGrossShare,
     admin_share_40: adminShare,
-    tds_10: tds10,
+    tds_10: tdsAmount,
     net_payout: netPayout,
-    settlement_remarks: settlementRemarks
+    settlement_remarks: settlementRemarks,
+    client_profit_pct: clientProfitPct,
+    allotted_quantity: allottedQty,
+    tds_pct: sysSettings.enable_tds_deduction ? (Number(sysSettings.default_tds_pct) || 10) : 0
   };
 }
 
@@ -683,7 +919,7 @@ export async function applyPreListingExitToIpo(ipoId, modeOrParams, extraParams 
     } catch (_) {}
 
     // 2. Fetch all applications for this IPO and update their metrics
-    const { data: apps } = await supabase.from('applications').select('*').eq('ipo_id', ipoId);
+    const { data: apps } = await supabase.from('applications').select('*, customers(profit_share_percentage)').eq('ipo_id', ipoId);
     if (apps && apps.length > 0) {
       for (const app of apps) {
         const metrics = calculateExitMetrics(exitMode, exitParams, app, ipoData);
@@ -757,7 +993,7 @@ export async function applyPreListingExitToApplications(applicationIds = [], mod
   try {
     const { data: apps } = await supabase
       .from('applications')
-      .select('*, ipos(*)')
+      .select('*, customers(profit_share_percentage), ipos(*)')
       .in('id', applicationIds);
 
     if (apps && apps.length > 0) {
@@ -839,7 +1075,7 @@ export async function updateApplicationIndividualExit(applicationId, {
   try {
     const { data: app, error: appFetchErr } = await supabase
       .from('applications')
-      .select('*, ipos(*)')
+      .select('*, ipos(*), customers(*)')
       .eq('id', applicationId)
       .single();
 
@@ -927,8 +1163,8 @@ export async function fetchCustomerPassbookLedger(customerId) {
   try {
     const { data: apps, error } = await supabase
       .from('applications')
-      .select('*, ipos(ipo_name, symbol, price_band_max, lot_size)')
-      .eq('customer_id', customerId)
+      .select('*, customers(*), ipos(*)')
+      .eq('id', customerId)
       .order('created_at', { ascending: false });
 
     if (error || !apps) return [];
@@ -942,6 +1178,7 @@ export async function fetchCustomerPassbookLedger(customerId) {
       const tds = Number(a.tds_10) || 0;
       const status = String(a.allotment_status || 'Pending');
       const isRejected = status.toLowerCase().includes('reject') || status.toLowerCase().includes('not') || status.toLowerCase().includes('unallotted');
+      const custSharePct = Number(a.customers?.profit_share_percentage ?? a.profit_share_percentage ?? 40);
 
       // Entry 1: Bid Block
       ledger.push({
@@ -975,7 +1212,7 @@ export async function fetchCustomerPassbookLedger(customerId) {
           id: `prof_${a.id}`,
           date: a.updated_at || a.created_at || new Date().toISOString(),
           scrip: ipoName,
-          type: `Profit Share (+40% - ${a.exit_mode || 'Market'})`,
+          type: `Profit Share (+${custSharePct}% - ${a.exit_mode || 'Market'})`,
           lots: a.lots_applied || 1,
           debit: 0,
           credit: clientShare,
@@ -1100,18 +1337,34 @@ export async function bulkInsertApplications(rows = [], targetIpoId = null) {
         if (existingCust?.id) {
           customerId = existingCust.id;
         } else {
-          const { data: newCust } = await supabase
+          const newCustPayload = {
+            full_name: r.name || r.full_name || 'Imported Customer',
+            pan_number: panVal,
+            aadhaar_number: r.aadhaar || r.aadhaar_number || r.aadhar || null,
+            birthdate: r.birthdate || r.dob || null,
+            bank_account_no: r.bank_account_no || r.bank_account || '',
+            mobile_number: r.mobile_number || r.phone || '',
+            balance: Number(r.balance) || 50000,
+            profit_share_percentage: Number(r.profit_share_percentage || r.profit_share || r.share) || 40
+          };
+          const { data: newCust, error: newCustErr } = await supabase
             .from('customers')
-            .insert([{
-              full_name: r.name || r.full_name || 'Imported Customer',
-              pan_number: panVal,
-              bank_account_no: r.bank_account_no || r.bank_account || '',
-              mobile_number: r.mobile_number || r.phone || '',
-              balance: Number(r.balance) || 50000
-            }])
+            .insert([newCustPayload])
             .select('id')
             .single();
-          if (newCust) customerId = newCust.id;
+
+          if (newCustErr) {
+            // Fallback if schema columns are not yet migrated
+            const { aadhaar_number, birthdate, ...safeCustPayload } = newCustPayload;
+            const { data: fallbackCust } = await supabase
+              .from('customers')
+              .insert([safeCustPayload])
+              .select('id')
+              .single();
+            if (fallbackCust) customerId = fallbackCust.id;
+          } else if (newCust) {
+            customerId = newCust.id;
+          }
         }
       }
 
