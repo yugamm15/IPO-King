@@ -469,13 +469,13 @@ function setRefreshTokenCookie(res, refreshToken) {
       cookieParts.push('Secure');
     }
     res.setHeader('Set-Cookie', cookieParts.join('; '));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function clearRefreshTokenCookie(res) {
   try {
     res.setHeader('Set-Cookie', 'ipoking_refresh_token=; HttpOnly; Path=/api; SameSite=Strict; Max-Age=0');
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function issueLoginTokens(email, role = 'admin') {

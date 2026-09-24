@@ -25,27 +25,31 @@ DROP POLICY IF EXISTS "Allow delete customer documents" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can upload customer documents" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can view customer documents" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can delete customer documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to upload customer documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to view customer documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to update customer documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to delete customer documents" ON storage.objects;
 
--- 3. Policy: Allow uploading documents to 'customer-docs'
-CREATE POLICY "Allow upload customer documents"
+-- 3. Policy: Allow uploading documents to 'customer-docs' (STRICTLY Authenticated & Service Role)
+CREATE POLICY "Allow authenticated users to upload customer documents"
 ON storage.objects FOR INSERT
-TO public
+TO authenticated, service_role
 WITH CHECK (bucket_id = 'customer-docs');
 
--- 4. Policy: Allow viewing / generating signed URLs for 'customer-docs'
-CREATE POLICY "Allow view customer documents"
+-- 4. Policy: Allow viewing / signed URLs for 'customer-docs' (STRICTLY Authenticated & Service Role)
+CREATE POLICY "Allow authenticated users to view customer documents"
 ON storage.objects FOR SELECT
-TO public
+TO authenticated, service_role
 USING (bucket_id = 'customer-docs');
 
--- 5. Policy: Allow updating documents in 'customer-docs'
-CREATE POLICY "Allow update customer documents"
+-- 5. Policy: Allow updating documents in 'customer-docs' (STRICTLY Authenticated & Service Role)
+CREATE POLICY "Allow authenticated users to update customer documents"
 ON storage.objects FOR UPDATE
-TO public
+TO authenticated, service_role
 USING (bucket_id = 'customer-docs');
 
--- 6. Policy: Allow deleting documents in 'customer-docs'
-CREATE POLICY "Allow delete customer documents"
+-- 6. Policy: Allow deleting documents in 'customer-docs' (STRICTLY Authenticated & Service Role)
+CREATE POLICY "Allow authenticated users to delete customer documents"
 ON storage.objects FOR DELETE
-TO public
+TO authenticated, service_role
 USING (bucket_id = 'customer-docs');

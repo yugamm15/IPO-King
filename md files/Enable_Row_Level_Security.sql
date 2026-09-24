@@ -2,114 +2,153 @@
 -- IPO KING - PRODUCTION ROW LEVEL SECURITY (RLS) & ACCESS CONTROL POLICIES
 -- ==============================================================================
 -- Execute this script in your Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql)
--- This script secures all database tables against unauthenticated or malicious public requests.
+-- This locks down all tables against unauthenticated / public access.
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
--- 1. ENABLE ROW LEVEL SECURITY (RLS) ON ALL TABLES
+-- 1. ENABLE ROW LEVEL SECURITY (RLS) ON ALL PRODUCTION TABLES
 -- ------------------------------------------------------------------------------
 ALTER TABLE IF EXISTS customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS ipos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS customer_beneficiaries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS customer_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS ipos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS banks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS system_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS otp_verifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS ipo_allotments ENABLE ROW LEVEL SECURITY;
 
 -- ------------------------------------------------------------------------------
--- 2. DROP PREVIOUS POLICIES (IF ANY) TO ENSURE CLEAN RE-APPLICATION
+-- 2. CLEAN UP PREVIOUS POLICIES
 -- ------------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Allow authenticated full access to customers" ON customers;
 DROP POLICY IF EXISTS "Allow service role full access to customers" ON customers;
+DROP POLICY IF EXISTS "Allow authenticated access to customers" ON customers;
+DROP POLICY IF EXISTS "Allow service role access to customers" ON customers;
+
+DROP POLICY IF EXISTS "Allow authenticated access to customer_beneficiaries" ON customer_beneficiaries;
+DROP POLICY IF EXISTS "Allow authenticated access to customer_documents" ON customer_documents;
+
+DROP POLICY IF EXISTS "Allow authenticated full access to applications" ON applications;
+DROP POLICY IF EXISTS "Allow authenticated access to applications" ON applications;
+
 DROP POLICY IF EXISTS "Allow public read access to active ipos" ON ipos;
 DROP POLICY IF EXISTS "Allow authenticated full access to ipos" ON ipos;
-DROP POLICY IF EXISTS "Allow authenticated full access to applications" ON applications;
+DROP POLICY IF EXISTS "Allow authenticated mutations to ipos" ON ipos;
+
 DROP POLICY IF EXISTS "Allow public read access to banks" ON banks;
 DROP POLICY IF EXISTS "Allow authenticated full access to banks" ON banks;
+DROP POLICY IF EXISTS "Allow authenticated mutations to banks" ON banks;
+
+DROP POLICY IF EXISTS "Allow public read access to system_settings" ON system_settings;
+DROP POLICY IF EXISTS "Allow authenticated mutations to system_settings" ON system_settings;
+
+DROP POLICY IF EXISTS "Allow authenticated access to profiles" ON profiles;
+
 DROP POLICY IF EXISTS "Allow service role full access to otp_verifications" ON otp_verifications;
-DROP POLICY IF EXISTS "Allow authenticated full access to ipo_allotments" ON ipo_allotments;
+DROP POLICY IF EXISTS "Allow backend anon read/write to otp_verifications" ON otp_verifications;
 
 -- ------------------------------------------------------------------------------
--- 3. CUSTOMERS TABLE POLICIES
--- Only authenticated users (or backend service role) can view, insert, update, delete customer PII.
+-- 3. CUSTOMERS & PII DATA (STRICTLY AUTHENTICATED & SERVICE ROLE ONLY)
+-- Anonymous users CANNOT read or write any customer PAN, Bank, or Demat data.
 -- ------------------------------------------------------------------------------
-CREATE POLICY "Allow authenticated full access to customers"
+CREATE POLICY "Allow authenticated access to customers"
 ON customers
 FOR ALL
-TO authenticated, anon
+TO authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated access to customer_beneficiaries"
+ON customer_beneficiaries
+FOR ALL
+TO authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated access to customer_documents"
+ON customer_documents
+FOR ALL
+TO authenticated, service_role
 USING (true)
 WITH CHECK (true);
 
 -- ------------------------------------------------------------------------------
--- 4. IPOS TABLE POLICIES
--- Public/anon can view IPO catalog; only authenticated/service role can mutate offerings.
+-- 4. APPLICATIONS & FINANCIAL LEDGER (STRICTLY AUTHENTICATED & SERVICE ROLE)
+-- ------------------------------------------------------------------------------
+CREATE POLICY "Allow authenticated access to applications"
+ON applications
+FOR ALL
+TO authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+-- ------------------------------------------------------------------------------
+-- 5. IPOS CATALOG (Public can read active IPOs; only authenticated can edit)
 -- ------------------------------------------------------------------------------
 CREATE POLICY "Allow public read access to active ipos"
 ON ipos
 FOR SELECT
-TO anon, authenticated
+TO anon, authenticated, service_role
 USING (true);
 
-CREATE POLICY "Allow authenticated full access to ipos"
+CREATE POLICY "Allow authenticated mutations to ipos"
 ON ipos
 FOR ALL
-TO authenticated
+TO authenticated, service_role
 USING (true)
 WITH CHECK (true);
 
 -- ------------------------------------------------------------------------------
--- 5. APPLICATIONS TABLE POLICIES
--- Protects IPO bidding transactions and financial ledger.
--- ------------------------------------------------------------------------------
-CREATE POLICY "Allow authenticated full access to applications"
-ON applications
-FOR ALL
-TO authenticated, anon
-USING (true)
-WITH CHECK (true);
-
--- ------------------------------------------------------------------------------
--- 6. BANKS TABLE POLICIES
--- Public/anon can read bank list for dropdowns; mutations require authenticated session.
+-- 6. BANKS CATALOG (Public can read banks list; only authenticated can mutate)
 -- ------------------------------------------------------------------------------
 CREATE POLICY "Allow public read access to banks"
 ON banks
 FOR SELECT
-TO anon, authenticated
+TO anon, authenticated, service_role
 USING (true);
 
-CREATE POLICY "Allow authenticated full access to banks"
+CREATE POLICY "Allow authenticated mutations to banks"
 ON banks
 FOR ALL
-TO authenticated
+TO authenticated, service_role
 USING (true)
 WITH CHECK (true);
 
 -- ------------------------------------------------------------------------------
--- 7. OTP VERIFICATIONS TABLE POLICIES
--- Strict backend access only (Service Role / API Gateway).
+-- 7. SYSTEM SETTINGS (Public can read calculation defaults; only authenticated can edit)
+-- ------------------------------------------------------------------------------
+CREATE POLICY "Allow public read access to system_settings"
+ON system_settings
+FOR SELECT
+TO anon, authenticated, service_role
+USING (true);
+
+CREATE POLICY "Allow authenticated mutations to system_settings"
+ON system_settings
+FOR ALL
+TO authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+-- ------------------------------------------------------------------------------
+-- 8. PROFILES TABLE (Authenticated users and service role only)
+-- ------------------------------------------------------------------------------
+CREATE POLICY "Allow authenticated access to profiles"
+ON profiles
+FOR ALL
+TO authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+-- ------------------------------------------------------------------------------
+-- 9. OTP VERIFICATIONS (STRICTLY SERVICE ROLE / BACKEND API)
+-- Prevents any client-side reading or tampering of OTP security hashes.
 -- ------------------------------------------------------------------------------
 CREATE POLICY "Allow service role full access to otp_verifications"
 ON otp_verifications
 FOR ALL
 TO service_role
-USING (true)
-WITH CHECK (true);
-
--- Allow backend upsert/select for 2FA OTPs
-CREATE POLICY "Allow backend anon read/write to otp_verifications"
-ON otp_verifications
-FOR ALL
-TO anon, authenticated
-USING (true)
-WITH CHECK (true);
-
--- ------------------------------------------------------------------------------
--- 8. IPO ALLOTMENTS TABLE POLICIES
--- ------------------------------------------------------------------------------
-CREATE POLICY "Allow authenticated full access to ipo_allotments"
-ON ipo_allotments
-FOR ALL
-TO authenticated, anon
 USING (true)
 WITH CHECK (true);
 
