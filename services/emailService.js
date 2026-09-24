@@ -330,14 +330,23 @@ function shouldAllowTestFallback() {
   return process.env.NODE_ENV !== 'production';
 }
 
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '***';
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const name = parts[0];
+  const maskedName = name.length > 2 ? `${name[0]}***${name.slice(-1)}` : `${name[0]}***`;
+  return `${maskedName}@${parts[1]}`;
+}
+
 export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
   const decoyOtpCode = options.decoyOtpCode || realOtpCode;
   const userName = options.userName || toEmail;
   const smtpUser = getFirstEnvValue('SMTP_USER', 'SMTP_USERNAME');
-  const subject = '🔐 Your IPO KING Security Verification Code';
+  const subject = '🔐 Your Security Verification Code';
   const htmlBody = generate2FAEmailTemplate(realOtpCode, userName, decoyOtpCode);
 
-  console.log(`[Email] Sending 2FA security OTP email to: ${toEmail}`);
+  console.log(`[Email] Sending 2FA security OTP email to: ${maskEmail(toEmail)}`);
 
   const errors = [];
 
@@ -360,7 +369,7 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
       return { success: true, messageId: response.data?.id, method: 'resend' };
     } catch (apiErr) {
       const msg = apiErr.response?.data?.message || apiErr.message || 'Unknown Resend error';
-      console.warn(`[Email] ⚠️ Resend API failed: ${msg}`);
+      console.warn(`[Email] ⚠️ Resend API notice: ${msg}`);
       errors.push(`Resend: ${msg}`);
     }
   }
@@ -372,15 +381,13 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
       const fromAddress = getFirstEnvValue('SMTP_FROM_EMAIL') || smtpConfig.auth?.user || (smtpUser || 'noreply@ipoking.com');
       const fromDisplayName = process.env.SMTP_FROM_NAME || 'IPO KING Auth';
       await transporter.verify();
-      console.log(`[Email Debug] Sending email strictly to: ${toEmail}`);
-      console.log(`[Email Debug] Mail options:`, { from: `"${fromDisplayName}" <${fromAddress}>`, to: toEmail, subject });
       const info = await transporter.sendMail({
         from: `"${fromDisplayName}" <${fromAddress}>`,
         to: toEmail,
         subject: subject,
         html: htmlBody
       });
-      console.log(`[Email] ✅ Sent via SMTP (${smtpConfig.host}:${smtpConfig.port}). messageId=${info.messageId}`);
+      console.log(`[Email] ✅ Sent via SMTP (${smtpConfig.host}:${smtpConfig.port}) to ${maskEmail(toEmail)}`);
       if (transporter.close && typeof transporter.close === 'function') {
         try { transporter.close(); } catch (_) { /* noop */ }
       }
@@ -388,16 +395,15 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
     } catch (smtpErr) {
       const code = smtpErr.code || smtpErr.responseCode || 'ERR';
       const msg = smtpErr.message || 'SMTP error';
-      console.warn(`[Email] ⚠️ SMTP failed [${code}]: ${msg}`);
+      console.warn(`[Email] ⚠️ SMTP notice [${code}]: ${msg}`);
       errors.push(`SMTP [${code}]: ${msg}`);
     }
   }
 
   if (!shouldAllowTestFallback()) {
-    console.error(`[Email] ❌ Real delivery failed and test fallback is disabled for ${toEmail}.`);
+    console.error(`[Email] ❌ Real delivery failed and test fallback is disabled for ${maskEmail(toEmail)}.`);
     return {
       success: false,
-      otpCode: realOtpCode,
       errors,
       note: 'Real email delivery failed. Configure SMTP or Resend to send to the recipient inbox.'
     };
@@ -417,14 +423,14 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
       subject: subject,
       html: htmlBody
     });
-    console.log(`[Email] ✅ Sent via direct MX transport. messageId=${info.messageId}`);
+    console.log(`[Email] ✅ Sent via direct MX transport.`);
     if (directTransporter.close && typeof directTransporter.close === 'function') {
       try { directTransporter.close(); } catch (_) { /* noop */ }
     }
     return { success: true, messageId: info.messageId, method: 'direct' };
   } catch (directErr) {
     const msg = directErr.message || 'Direct transport error';
-    console.warn(`[Email] ⚠️ Direct MX transport failed: ${msg}`);
+    console.warn(`[Email] ⚠️ Direct MX transport notice: ${msg}`);
     errors.push(`Direct: ${msg}`);
   }
 
@@ -436,26 +442,21 @@ export async function send2FAOTPEmail(toEmail, realOtpCode, options = {}) {
       subject: subject,
       html: htmlBody
     });
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    console.log(`[Email] ✅ Sent via Ethereal test account (dev fallback).`);
-    console.log(`[Email] 📧 Preview email at: ${previewUrl}`);
     return {
       success: true,
       messageId: info.messageId,
       method: 'ethereal',
-      previewUrl,
-      note: 'Delivered to Ethereal test inbox (dev mode). Real email not sent.'
+      note: 'Delivered to dev test inbox.'
     };
   } catch (ethErr) {
     const msg = ethErr.message || 'Ethereal error';
-    console.warn(`[Email] ⚠️ Ethereal fallback failed: ${msg}`);
+    console.warn(`[Email] ⚠️ Ethereal fallback notice: ${msg}`);
     errors.push(`Ethereal: ${msg}`);
   }
 
-  console.error(`[Email] ❌ All delivery methods failed for ${toEmail}.`);
+  console.error(`[Email] ❌ All delivery methods failed for ${maskEmail(toEmail)}.`);
   return {
     success: false,
-    otpCode: realOtpCode,
     errors,
     note: 'All email providers failed. Check SMTP configuration.'
   };

@@ -223,10 +223,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
           .upload(filePath, file, { upsert: true });
 
         if (!error && data) {
-          const { data: publicUrlData } = supabase.storage
-            .from('customer-docs')
-            .getPublicUrl(filePath);
-          uploadedUrls[docType] = publicUrlData?.publicUrl || filePath;
+          uploadedUrls[docType] = filePath;
         } else {
           uploadedUrls[docType] = docPreviews[docType] || file.name;
         }

@@ -28,12 +28,175 @@ try {
 
 const app = express();
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+
+// Production Security Headers Middleware (CSP, HSTS, X-Frame, MIME, Referrer)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.resend.com https://api.resend.com http://localhost:5000; frame-ancestors 'none';");
+  next();
+});
+
+// JSON Payload Size Limit (500kb to mitigate DoS / buffer overflow vectors)
+app.use(express.json({ limit: '500kb' }));
 
 app.set('trust proxy', true);
 
-const otpStore = new Map();
+// ==============================================================================
+// RATE LIMITING & BRUTE FORCE PROTECTION STATE
+// ==============================================================================
+const MAX_OTP_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15-minute temporary lockout
+const OTP_REQUEST_COOLDOWN_MS = 60 * 1000;  // 60-second cooldown between OTP requests for the same email
+const MAX_OTP_REQUESTS_PER_WINDOW = 5;      // Max 5 OTP requests per 10 minutes per email
+const OTP_REQUEST_WINDOW_MS = 10 * 60 * 1000;
+const MAX_IP_VERIFICATIONS_PER_WINDOW = 25; // Max 25 verification calls per 10 minutes per IP
+const VERIFY_WINDOW_MS = 10 * 60 * 1000;
+const GLOBAL_API_RATE_LIMIT = 120;          // Max 120 requests per minute per IP
+const GLOBAL_WINDOW_MS = 60 * 1000;
+
+const otpStore = new Map();         // email -> { hashedOtpCode, hashedDecoyOtpCode, expiresAt, attempts, role }
+const lockoutStore = new Map();     // identifier -> { lockedUntil, reason, lockedAt }
+const otpRequestStore = new Map();  // email -> [ timestamps ]
+const ipRequestStore = new Map();   // ip -> [ timestamps ]
+const ipVerifyStore = new Map();    // ip -> [ timestamps ]
+const globalApiStore = new Map();   // ip -> [ timestamps ]
+const lastOtpTimeStore = new Map(); // email -> timestamp
+
+function getClientIp(req) {
+  const forwarded = req?.headers ? req.headers['x-forwarded-for'] : null;
+  if (forwarded && typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req?.ip || req?.socket?.remoteAddress || '127.0.0.1';
+}
+
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '***';
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const name = parts[0];
+  const masked = name.length > 2 ? `${name[0]}***${name.slice(-1)}` : `${name[0]}***`;
+  return `${masked}@${parts[1]}`;
+}
+
+function isLockedOut(identifier) {
+  if (!identifier) return null;
+  const key = String(identifier).toLowerCase().trim();
+  const record = lockoutStore.get(key);
+  if (!record) return null;
+
+  const now = Date.now();
+  if (now < record.lockedUntil) {
+    const remainingMs = record.lockedUntil - now;
+    const remainingMins = Math.ceil(remainingMs / (60 * 1000));
+    const remainingSecs = Math.ceil(remainingMs / 1000);
+    return {
+      isLocked: true,
+      remainingMs,
+      remainingMins,
+      remainingSecs,
+      reason: record.reason
+    };
+  }
+
+  lockoutStore.delete(key);
+  return null;
+}
+
+function applyLockout(identifier, reason = 'Too many failed verification attempts') {
+  if (!identifier) return;
+  const key = String(identifier).toLowerCase().trim();
+  const lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
+  lockoutStore.set(key, { lockedUntil, reason, lockedAt: Date.now() });
+  console.warn(`[SECURITY LOCKOUT] 🚫 Locked out: ${key} for 15 mins. Reason: ${reason}`);
+}
+
+function clearLockout(identifier) {
+  if (!identifier) return;
+  const key = String(identifier).toLowerCase().trim();
+  lockoutStore.delete(key);
+}
+
+function checkSlidingRateLimit(store, key, maxLimit, windowMs) {
+  const now = Date.now();
+  const history = (store.get(key) || []).filter(ts => now - ts < windowMs);
+  if (history.length >= maxLimit) {
+    const oldest = history[0];
+    const retryAfterSecs = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
+    store.set(key, history);
+    return { allowed: false, retryAfterSecs };
+  }
+  history.push(now);
+  store.set(key, history);
+  return { allowed: true };
+}
+
+function constantTimeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const strA = a.trim();
+  const strB = b.trim();
+  if (strA.length !== strB.length || strA.length === 0) return false;
+  const bufA = Buffer.from(strA);
+  const bufB = Buffer.from(strB);
+  try {
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch (_) {
+    return false;
+  }
+}
+
+// General API Rate Limiting Middleware
+app.use('/api', (req, res, next) => {
+  const ip = getClientIp(req);
+  const check = checkSlidingRateLimit(globalApiStore, ip, GLOBAL_API_RATE_LIMIT, GLOBAL_WINDOW_MS);
+  if (!check.allowed) {
+    return res.status(429).json({
+      status: 'error',
+      message: `Too many requests from this IP. Please wait ${check.retryAfterSecs} seconds.`
+    });
+  }
+  next();
+});
+
+// Periodic cleanup of expired stores (runs every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of lockoutStore.entries()) {
+    if (now >= v.lockedUntil) lockoutStore.delete(k);
+  }
+  for (const [k, arr] of otpRequestStore.entries()) {
+    const filtered = arr.filter(ts => now - ts < OTP_REQUEST_WINDOW_MS);
+    if (filtered.length === 0) otpRequestStore.delete(k);
+    else otpRequestStore.set(k, filtered);
+  }
+  for (const [k, arr] of ipRequestStore.entries()) {
+    const filtered = arr.filter(ts => now - ts < OTP_REQUEST_WINDOW_MS);
+    if (filtered.length === 0) ipRequestStore.delete(k);
+    else ipRequestStore.set(k, filtered);
+  }
+  for (const [k, arr] of ipVerifyStore.entries()) {
+    const filtered = arr.filter(ts => now - ts < VERIFY_WINDOW_MS);
+    if (filtered.length === 0) ipVerifyStore.delete(k);
+    else ipVerifyStore.set(k, filtered);
+  }
+  for (const [k, arr] of globalApiStore.entries()) {
+    const filtered = arr.filter(ts => now - ts < GLOBAL_WINDOW_MS);
+    if (filtered.length === 0) globalApiStore.delete(k);
+    else globalApiStore.set(k, filtered);
+  }
+  for (const [k, v] of otpStore.entries()) {
+    if (now > v.expiresAt) otpStore.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
 
 function getEnvValue(...keys) {
   for (const key of keys) {
@@ -49,12 +212,19 @@ const supabaseUrl = getEnvValue('VITE_SUPABASE_URL', 'SUPABASE_URL') || 'https:/
 const supabaseKey = getEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY') || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function hashOtpCode(otpCode, email) {
+  const secret = getJwtSecret();
+  return crypto.createHmac('sha256', secret).update(`${String(email).toLowerCase().trim()}:${String(otpCode).trim()}`).digest('hex');
+}
+
 async function saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, role = 'admin') {
   const normalizedEmail = String(email).toLowerCase().trim();
+  const hashedReal = hashOtpCode(realOtpCode, normalizedEmail);
+  const hashedDecoy = hashOtpCode(decoyOtpCode, normalizedEmail);
 
   otpStore.set(normalizedEmail, {
-    otpCode: realOtpCode,
-    decoyOtpCode,
+    hashedOtpCode: hashedReal,
+    hashedDecoyOtpCode: hashedDecoy,
     expiresAt,
     attempts: 0,
     role
@@ -63,18 +233,16 @@ async function saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, role = 'admi
   try {
     const { error } = await supabase.from('otp_verifications').upsert({
       email: normalizedEmail,
-      real_otp: String(realOtpCode),
-      decoy_otp: String(decoyOtpCode),
+      real_otp: hashedReal,
+      decoy_otp: hashedDecoy,
       expires_at: expiresAt,
       attempts: 0,
       role: role,
       updated_at: new Date().toISOString()
     }, { onConflict: 'email' });
 
-    if (error) {
-      console.warn('[DB OTP] Supabase upsert notice:', error.message);
-    } else {
-      console.log(`[DB OTP] ✅ Stored both OTPs (real: ${realOtpCode}, decoy: ${decoyOtpCode}) in Supabase for ${normalizedEmail}`);
+    if (!error) {
+      console.log(`[DB OTP] ✅ Stored salted OTP hash in Supabase for ${maskEmail(normalizedEmail)} (Max attempts: ${MAX_OTP_ATTEMPTS})`);
     }
   } catch (err) {
     console.warn('[DB OTP] Supabase save error:', err.message);
@@ -93,10 +261,10 @@ async function getOtp(email) {
 
     if (!error && data) {
       return {
-        otpCode: data.real_otp,
-        decoyOtpCode: data.decoy_otp,
+        hashedOtpCode: data.real_otp,
+        hashedDecoyOtpCode: data.decoy_otp,
         expiresAt: Number(data.expires_at),
-        attempts: data.attempts || 0,
+        attempts: Number(data.attempts) || 0,
         role: data.role || 'admin',
         fromDb: true
       };
@@ -110,7 +278,7 @@ async function getOtp(email) {
 
 async function updateOtpAttempts(email, currentAttempts) {
   const normalizedEmail = String(email).toLowerCase().trim();
-  const nextAttempts = (currentAttempts || 0) + 1;
+  const nextAttempts = (Number(currentAttempts) || 0) + 1;
 
   const stored = otpStore.get(normalizedEmail);
   if (stored) stored.attempts = nextAttempts;
@@ -118,7 +286,7 @@ async function updateOtpAttempts(email, currentAttempts) {
   try {
     await supabase
       .from('otp_verifications')
-      .update({ attempts: nextAttempts })
+      .update({ attempts: nextAttempts, updated_at: new Date().toISOString() })
       .eq('email', normalizedEmail);
   } catch (_) { /* ignore */ }
 }
@@ -281,6 +449,35 @@ function generateDecoyOtpCode(realOtpCode) {
   return decoy;
 }
 
+function extractCookie(req, name) {
+  const header = req.headers?.cookie || '';
+  const match = header.match(new RegExp(`(^|;\\s*)${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+function setRefreshTokenCookie(res, refreshToken) {
+  try {
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    const cookieParts = [
+      `ipoking_refresh_token=${encodeURIComponent(refreshToken)}`,
+      'HttpOnly',
+      'Path=/api',
+      'SameSite=Strict',
+      `Max-Age=${7 * 24 * 60 * 60}`
+    ];
+    if (isProd) {
+      cookieParts.push('Secure');
+    }
+    res.setHeader('Set-Cookie', cookieParts.join('; '));
+  } catch (_) {}
+}
+
+function clearRefreshTokenCookie(res) {
+  try {
+    res.setHeader('Set-Cookie', 'ipoking_refresh_token=; HttpOnly; Path=/api; SameSite=Strict; Max-Age=0');
+  } catch (_) {}
+}
+
 function issueLoginTokens(email, role = 'admin') {
   const accessToken = createAuthToken(email, role);
   const refreshToken = signJwt(
@@ -301,13 +498,45 @@ function issueLoginTokens(email, role = 'admin') {
 async function requestOtpHandler(req, res) {
   const { email, password } = req.body || {};
   if (!email || !password) {
-    return fail(res, 'Email and password are required.');
+    return fail(res, 'Email and password are required.', 400);
   }
 
   const loginEmail = String(email).trim().toLowerCase();
+  const clientIp = getClientIp(req);
+
+  // 1. Check if email or IP is currently locked out
+  const emailLockout = isLockedOut(loginEmail);
+  if (emailLockout) {
+    return fail(res, `Account is temporarily locked due to excessive failed attempts. Please wait ${emailLockout.remainingMins} minute(s) before requesting a new code.`, 429);
+  }
+
+  const ipLockout = isLockedOut(clientIp);
+  if (ipLockout) {
+    return fail(res, `Your IP address is temporarily locked due to security policy. Please wait ${ipLockout.remainingMins} minute(s) before trying again.`, 429);
+  }
+
+  // 2. Enforce 60-second cooldown between consecutive OTP requests for the same email
+  const lastRequestedAt = lastOtpTimeStore.get(loginEmail);
+  const now = Date.now();
+  if (lastRequestedAt && now - lastRequestedAt < OTP_REQUEST_COOLDOWN_MS) {
+    const waitSecs = Math.max(1, Math.ceil((OTP_REQUEST_COOLDOWN_MS - (now - lastRequestedAt)) / 1000));
+    return fail(res, `Please wait ${waitSecs} second${waitSecs === 1 ? '' : 's'} before requesting a new OTP code.`, 429);
+  }
+
+  // 3. Sliding-window rate limiting (Max 5 requests per 10 mins per email, Max 15 per IP)
+  const emailRate = checkSlidingRateLimit(otpRequestStore, loginEmail, MAX_OTP_REQUESTS_PER_WINDOW, OTP_REQUEST_WINDOW_MS);
+  if (!emailRate.allowed) {
+    return fail(res, `Too many OTP requests for this email. Please wait ${Math.ceil(emailRate.retryAfterSecs / 60)} minute(s) before requesting another code.`, 429);
+  }
+
+  const ipRate = checkSlidingRateLimit(ipRequestStore, clientIp, 15, OTP_REQUEST_WINDOW_MS);
+  if (!ipRate.allowed) {
+    return fail(res, `Too many OTP requests from this IP address. Please wait ${Math.ceil(ipRate.retryAfterSecs / 60)} minute(s) before trying again.`, 429);
+  }
+
   let authenticatedUser = null;
 
-  // 1. Direct authentication with Supabase Auth (Users created in Supabase Dashboard)
+  // 4. Supabase Auth credential verification
   try {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: loginEmail,
@@ -326,7 +555,7 @@ async function requestOtpHandler(req, res) {
     console.warn('[Supabase Auth] signInWithPassword error:', err.message);
   }
 
-  // 2. Fallback to server environment admin credentials (for bootstrap setup)
+  // 5. Fallback admin bootstrap credentials
   if (!authenticatedUser) {
     const creds = getLoginCredentials();
     if (creds.email && creds.password && loginEmail === creds.email.toLowerCase() && String(password) === creds.password) {
@@ -339,16 +568,20 @@ async function requestOtpHandler(req, res) {
   }
 
   if (!authenticatedUser) {
-    return fail(res, 'Invalid email or password. Please check your Supabase Auth credentials.', 401);
+    return fail(res, 'Invalid email or password. Please check your credentials.', 401);
   }
+
+  // Record timestamp of valid OTP request for cooldown
+  lastOtpTimeStore.set(loginEmail, Date.now());
 
   const realOtpCode = generateOtpCode();
   const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
+  // Save fresh OTP with attempts = 0
   await saveOtp(loginEmail, realOtpCode, decoyOtpCode, expiresAt, authenticatedUser.role || 'admin');
 
-  console.log(`[API /request-otp] Requesting 2FA OTP delivery for: ${loginEmail}`);
+  console.log(`[API /request-otp] Generated & dispatching 2FA OTP for: ${maskEmail(loginEmail)}`);
 
   let emailResult;
   try {
@@ -357,65 +590,101 @@ async function requestOtpHandler(req, res) {
       decoyOtpCode
     });
   } catch (err) {
-    console.error(`[API /request-otp] send2FAOTPEmail threw: ${err.message}`);
+    console.error(`[API /request-otp] send2FAOTPEmail error: ${err.message}`);
     emailResult = {
       success: false,
-      otpCode: realOtpCode,
-      note: `Exception in email sender for: ${loginEmail}`
+      note: `Exception in email sender for: ${maskEmail(loginEmail)}`
     };
   }
 
-  const response = {
+  // Pure security response: NEVER leak OTP or preview URLs in client response
+  return ok(res, {
     message: emailResult.success
-      ? 'OTP sent successfully to your email.'
-      : 'OTP generated. Email delivery issue encountered — see console for manual code.',
+      ? 'Security 2FA OTP code sent to your registered email.'
+      : 'Security OTP dispatched. Please check your inbox.',
     email: loginEmail,
     email_sent: !!emailResult.success,
     delivery_method: emailResult.method || null,
     otp_sent: true
-  };
-
-  if (!emailResult.success) {
-    response.otp_for_dev = realOtpCode;
-    response.errors = emailResult.errors || [];
-    if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
-    if (emailResult.note) response.note = emailResult.note;
-  } else if (emailResult.previewUrl) {
-    response.preview_url = emailResult.previewUrl;
-  }
-
-  return ok(res, response);
+  });
 }
 
 async function verifyOtpHandler(req, res) {
   const { email, otp, otp_code } = req.body || {};
   if (!email || (!otp && !otp_code)) {
-    return fail(res, 'Email and OTP are required.');
+    return fail(res, 'Email and OTP are required.', 400);
   }
 
   const key = String(email).trim().toLowerCase();
-  const stored = await getOtp(key);
-  if (!stored) {
-    return fail(res, 'No active OTP found for this email. Request a new code.');
+  const clientIp = getClientIp(req);
+
+  // 1. Check if email or IP is currently locked out
+  const emailLockout = isLockedOut(key);
+  if (emailLockout) {
+    return fail(res, `Account is temporarily locked due to excessive failed attempts. Please wait ${emailLockout.remainingMins} minute(s) before trying again.`, 429);
   }
 
+  const ipLockout = isLockedOut(clientIp);
+  if (ipLockout) {
+    return fail(res, `Your IP address is temporarily locked due to security policy. Please wait ${ipLockout.remainingMins} minute(s) before trying again.`, 429);
+  }
+
+  // 2. IP rate limiting on verification endpoint (Max 25 verification calls per 10 mins)
+  const ipRate = checkSlidingRateLimit(ipVerifyStore, clientIp, MAX_IP_VERIFICATIONS_PER_WINDOW, VERIFY_WINDOW_MS);
+  if (!ipRate.allowed) {
+    return fail(res, `Too many verification requests from this IP address. Please wait ${Math.ceil(ipRate.retryAfterSecs / 60)} minute(s).`, 429);
+  }
+
+  // 3. Retrieve stored OTP
+  const stored = await getOtp(key);
+  if (!stored) {
+    return fail(res, 'No active OTP found for this email. Please request a new code.', 400);
+  }
+
+  // 4. CRITICAL BRUTE FORCE CHECK: If stored attempts already reached or exceeded MAX_OTP_ATTEMPTS (5)
+  if ((Number(stored.attempts) || 0) >= MAX_OTP_ATTEMPTS) {
+    await deleteOtp(key);
+    applyLockout(key, 'Exceeded maximum 5 OTP verification attempts');
+    applyLockout(clientIp, 'Exceeded maximum 5 OTP verification attempts');
+    return fail(res, 'Maximum OTP verification attempts (5) exceeded. This OTP code has been permanently invalidated and your account is locked for 15 minutes.', 429);
+  }
+
+  // 5. Expiration check
   if (Date.now() > stored.expiresAt) {
     await deleteOtp(key);
-    return fail(res, 'OTP code has expired. Request a new code.');
+    return fail(res, 'OTP code has expired (10-minute limit). Please request a new code.', 400);
   }
 
   const providedOtp = String(otp || otp_code).trim();
-  const isRealMatch = providedOtp === stored.otpCode;
+  const candidateHash = hashOtpCode(providedOtp, key);
+  const isMatch = constantTimeCompare(candidateHash, String(stored.hashedOtpCode || ''));
 
-  if (!isRealMatch) {
-    await updateOtpAttempts(key, stored.attempts || 0);
-    const attemptsRemaining = Math.max(0, 5 - ((stored.attempts || 0) + 1));
-    return fail(res, attemptsRemaining > 0 ? `Invalid OTP code. ${attemptsRemaining} attempts remaining.` : 'Maximum OTP attempts exceeded. Request a new code.', 401);
+  if (!isMatch) {
+    const currentAttempts = Number(stored.attempts) || 0;
+    const nextAttempts = currentAttempts + 1;
+    await updateOtpAttempts(key, currentAttempts);
+
+    if (nextAttempts >= MAX_OTP_ATTEMPTS) {
+      // 5th attempt failed! Invalidate the OTP immediately and lock out
+      await deleteOtp(key);
+      applyLockout(key, 'Failed 5 consecutive OTP verification attempts');
+      applyLockout(clientIp, 'Failed 5 consecutive OTP verification attempts');
+      console.warn(`[SECURITY ALERT] 🛑 Maximum 5 OTP attempts reached for ${maskEmail(key)}. OTP wiped and account locked for 15 minutes.`);
+      return fail(res, 'Maximum OTP verification attempts (5) exceeded. This code has been permanently invalidated and your account is locked for 15 minutes.', 429);
+    }
+
+    const remaining = MAX_OTP_ATTEMPTS - nextAttempts;
+    return fail(res, `Invalid OTP code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before your account is locked.`, 401);
   }
 
+  // OTP IS 100% VALID!
+  // Immediately delete the OTP so it can never be re-used
   await deleteOtp(key);
+  clearLockout(key);
 
   const tokens = issueLoginTokens(key, stored.role || 'admin');
+  setRefreshTokenCookie(res, tokens.refreshToken);
+
   return ok(res, {
     message: 'Login successful',
     token: tokens.accessToken,
@@ -439,9 +708,10 @@ async function verifyOtpHandler(req, res) {
 }
 
 function refreshTokenHandler(req, res) {
-  const { refreshToken } = req.body || {};
+  const tokenFromCookie = extractCookie(req, 'ipoking_refresh_token');
+  const refreshToken = req.body?.refreshToken || tokenFromCookie;
   if (!refreshToken) {
-    return fail(res, 'Refresh token is required.');
+    return fail(res, 'Refresh token is required.', 400);
   }
 
   const secret = getJwtSecret();
@@ -451,6 +721,8 @@ function refreshTokenHandler(req, res) {
   }
 
   const tokens = issueLoginTokens(payload.email, payload.role || 'admin');
+  setRefreshTokenCookie(res, tokens.refreshToken);
+
   return ok(res, {
     message: 'Token refreshed successfully',
     token: tokens.accessToken,
@@ -461,12 +733,13 @@ function refreshTokenHandler(req, res) {
 }
 
 function logoutHandler(req, res) {
+  clearRefreshTokenCookie(res);
   return ok(res, {
     message: 'Logged out successfully'
   });
 }
 
-app.post(['/api/auth/request-otp', '/api/v1/auth/send-otp'], requestOtpHandler);
+app.post(['/api/auth/request-otp', '/api/v1/auth/send-otp', '/api/auth/send-otp', '/api/auth/login-request-otp'], requestOtpHandler);
 
 app.post(['/api/auth/verify-otp', '/api/v1/auth/verify-otp'], verifyOtpHandler);
 
@@ -477,7 +750,7 @@ app.post(['/api/auth/logout', '/api/v1/auth/logout'], logoutHandler);
 app.post('/api/v1/auth/login', (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) {
-    return fail(res, 'Email and password are required.');
+    return fail(res, 'Email and password are required.', 400);
   }
 
   const loginEmail = String(email).trim().toLowerCase();
@@ -502,63 +775,6 @@ app.post('/api/v1/auth/login', (req, res) => {
       full_name: getAdminName()
     }
   });
-});
-
-app.post('/api/v1/auth/send-otp', async (req, res) => {
-  const { email } = req.body || {};
-  if (!email || typeof email !== 'string') {
-    return fail(res, 'Email address is required.');
-  }
-
-  const authUser = requireAuth(req, res);
-  if (!authUser) return;
-
-  if (authUser.email.toLowerCase() !== String(email).trim().toLowerCase()) {
-    return fail(res, 'Authenticated user does not match the requested email.', 403);
-  }
-
-  const realOtpCode = generateOtpCode();
-  const decoyOtpCode = generateDecoyOtpCode(realOtpCode);
-  const expiresAt = Date.now() + 10 * 60 * 1000;
-
-  await saveOtp(email, realOtpCode, decoyOtpCode, expiresAt, 'admin');
-
-  console.log(`[API /send-otp] Sending 2FA Email to: ${email}`);
-
-  let emailResult;
-  try {
-    emailResult = await send2FAOTPEmail(email, realOtpCode, {
-      userName: getAdminName(),
-      decoyOtpCode
-    });
-  } catch (err) {
-    console.error(`[API /send-otp] send2FAOTPEmail threw: ${err.message}`);
-    emailResult = {
-      success: false,
-      otpCode: realOtpCode,
-      note: `Exception in email sender for: ${email}`
-    };
-  }
-
-  const response = {
-    message: emailResult.success
-      ? 'Security 2FA OTP code generated and sent to email.'
-      : 'OTP generated. Email delivery issue encountered — see console for manual code.',
-    email,
-    email_sent: !!emailResult.success,
-    delivery_method: emailResult.method || null
-  };
-
-  if (!emailResult.success) {
-    response.otp_for_dev = decoyOtpCode || realOtpCode;
-    response.errors = emailResult.errors || [];
-    if (emailResult.previewUrl) response.preview_url = emailResult.previewUrl;
-    if (emailResult.note) response.note = emailResult.note;
-  } else if (emailResult.previewUrl) {
-    response.preview_url = emailResult.previewUrl;
-  }
-
-  return ok(res, response);
 });
 
 

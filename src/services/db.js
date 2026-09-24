@@ -35,8 +35,12 @@ export const dbConfig = {
   status: 'connected'
 };
 
-// LocalStorage Persistent Cache Helpers for 0ms cold starts
+// LocalStorage Persistent Cache Helpers - STRICTLY RESTRICTED TO NON-SENSITIVE METADATA
+// Customer PII, Applications, PAN, Bank Details & KYC are strictly in-memory (dbCache)
+const ALLOWED_LOCAL_STORAGE_KEYS = new Set(['system_settings', 'banks', 'theme_preference']);
+
 function getStoredCache(key) {
+  if (!ALLOWED_LOCAL_STORAGE_KEYS.has(key)) return null;
   try {
     const raw = localStorage.getItem('ipoking_cache_' + key);
     return raw ? JSON.parse(raw) : null;
@@ -46,9 +50,50 @@ function getStoredCache(key) {
 }
 
 function setStoredCache(key, data) {
+  if (!ALLOWED_LOCAL_STORAGE_KEYS.has(key)) return;
   try {
     localStorage.setItem('ipoking_cache_' + key, JSON.stringify(data));
   } catch (e) {}
+}
+
+// Purge any legacy sensitive PII / financial caches from localStorage
+if (typeof window !== 'undefined') {
+  try {
+    ['customers', 'applications', 'stats', 'ipos', 'app_overrides'].forEach(k => {
+      localStorage.removeItem('ipoking_cache_' + k);
+    });
+  } catch (_) {}
+}
+
+/**
+ * Generates a secure, temporary signed URL for customer KYC & bank documents
+ * Prevents public storage bucket exposure
+ */
+export async function getSecureDocumentUrl(filePathOrUrl, expiresInSeconds = 3600) {
+  if (!filePathOrUrl || typeof filePathOrUrl !== 'string') return '';
+  if (filePathOrUrl.startsWith('data:') || filePathOrUrl.startsWith('blob:')) {
+    return filePathOrUrl;
+  }
+
+  let cleanPath = filePathOrUrl;
+  if (cleanPath.includes('/customer-docs/')) {
+    cleanPath = cleanPath.split('/customer-docs/')[1]?.split('?')[0] || cleanPath;
+  }
+  cleanPath = cleanPath.replace(/^\/+/, '');
+
+  try {
+    const { data, error } = await supabase.storage
+      .from('customer-docs')
+      .createSignedUrl(cleanPath, expiresInSeconds);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+  } catch (err) {
+    console.warn('[Storage] createSignedUrl notice:', err.message);
+  }
+
+  return filePathOrUrl;
 }
 
 export const DEFAULT_BANKS = [
@@ -175,17 +220,17 @@ export async function saveSystemSettings(newSettings = {}) {
 }
 
 const dbCache = {
-  ipos: getStoredCache('ipos'),
-  applications: getStoredCache('applications'),
-  customers: getStoredCache('customers'),
+  ipos: null,
+  applications: null,
+  customers: null,
   banks: getStoredCache('banks') || DEFAULT_BANKS,
   settings: getStoredCache('system_settings') || DEFAULT_SYSTEM_SETTINGS,
-  stats: getStoredCache('stats'),
-  iposTimestamp: Date.now(),
-  appsTimestamp: Date.now(),
-  custTimestamp: Date.now(),
+  stats: null,
+  iposTimestamp: 0,
+  appsTimestamp: 0,
+  custTimestamp: 0,
   banksTimestamp: Date.now(),
-  statsTimestamp: Date.now()
+  statsTimestamp: 0
 };
 
 const CACHE_TTL_MS = 60000; // 60s background revalidation window

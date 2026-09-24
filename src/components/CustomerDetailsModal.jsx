@@ -19,7 +19,7 @@ import {
   Layers
 } from 'lucide-react';
 import { downloadCustomerPdf, downloadCustomerPassbookPdf } from '../utils/pdfGenerator';
-import { fetchCustomerPassbookLedger } from '../services/db';
+import { fetchCustomerPassbookLedger, getSecureDocumentUrl } from '../services/db';
 
 export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'passbook'
@@ -27,6 +27,20 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
   const [activePhoto, setActivePhoto] = useState(null);
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const [loadingLedger, setLoadingLedger] = useState(false);
+  const [resolvingPhoto, setResolvingPhoto] = useState(false);
+
+  const handleViewDocument = async (label, docUrl) => {
+    if (!docUrl) return;
+    setResolvingPhoto(true);
+    try {
+      const signedUrl = await getSecureDocumentUrl(docUrl, 3600);
+      setActivePhoto({ label, url: signedUrl || docUrl });
+    } catch (_) {
+      setActivePhoto({ label, url: docUrl });
+    } finally {
+      setResolvingPhoto(false);
+    }
+  };
 
   useEffect(() => {
     if (customer?.id && activeTab === 'passbook') {
@@ -434,10 +448,11 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                           <button
                             type="button"
                             className="btn btn-secondary"
-                            onClick={() => setActivePhoto({ label: dt.label, url: docUrl })}
+                            onClick={() => handleViewDocument(dt.label, docUrl)}
+                            disabled={resolvingPhoto}
                             style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px', marginTop: '4px' }}
                           >
-                            <Eye size={12} /> View Photo
+                            <Eye size={12} /> {resolvingPhoto ? 'Loading...' : 'View Photo'}
                           </button>
                         )}
                       </div>

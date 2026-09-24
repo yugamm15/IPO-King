@@ -9,7 +9,6 @@ import {
   X,
   Sliders,
   Percent,
-  Calculator,
   ShieldCheck,
   Save,
   RotateCcw,
@@ -34,7 +33,6 @@ export default function Settings() {
   // Settings State
   const [settings, setSettings] = useState(getSystemSettings());
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [simGrossProfit, setSimGrossProfit] = useState(10000);
 
   // Bank Master State
   const [banks, setBanks] = useState([]);
@@ -112,15 +110,6 @@ export default function Settings() {
       showToast('Settings reset to system defaults.');
     }
   };
-
-  // Live Simulator Calculations
-  const simCustomerPct = Number(settings.default_customer_profit_pct) || 40;
-  const simCompanyPct = 100 - simCustomerPct;
-  const simCustGross = Math.round(simGrossProfit * (simCustomerPct / 100));
-  const simCompanyGross = simGrossProfit - simCustGross;
-  const simTdsRate = settings.enable_tds_deduction ? (Number(settings.default_tds_pct) || 10) / 100 : 0;
-  const simTdsAmt = simCustGross > 0 ? Math.round(simCustGross * simTdsRate) : 0;
-  const simNetPayout = simCustGross > 0 ? (simCustGross - simTdsAmt) : simCustGross;
 
   // Bank Handlers
   const handleAddBank = async (e) => {
@@ -471,70 +460,6 @@ export default function Settings() {
                   <option value="SAUDA">Subject to Sauda (Allotment-Linked Exit)</option>
                   <option value="PRE_LISTING">Off-Market / Pre-Listing Sale</option>
                 </select>
-              </div>
-            </div>
-
-            {/* Section 4: Live Calculation Simulator Card */}
-            <div className="fintech-card" style={{ padding: '24px', background: 'linear-gradient(145deg, rgba(4, 47, 46, 0.04) 0%, rgba(13, 148, 136, 0.08) 100%)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Calculator size={20} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Live Profit Split Simulator
-                  </h3>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    Preview how ₹ payouts will calculate under current settings
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '14px' }}>
-                <label className="input-label">Simulate Sample Total Gross Profit (₹):</label>
-                <input
-                  type="number"
-                  min="100"
-                  step="500"
-                  value={simGrossProfit}
-                  onChange={(e) => setSimGrossProfit(Math.max(0, Number(e.target.value) || 0))}
-                  className="input-field"
-                  style={{ fontWeight: 800, fontSize: '15px' }}
-                />
-              </div>
-
-              {/* Calculation Breakdown */}
-              <div style={{
-                borderRadius: '12px',
-                background: '#ffffff',
-                border: '1px solid var(--panel-border)',
-                padding: '14px',
-                fontSize: '13px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Total Gross Profit:</span>
-                  <strong style={{ color: 'var(--text-main)' }}>₹{simGrossProfit.toLocaleString('en-IN')}</strong>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-                  <span style={{ color: 'var(--primary)' }}>Customer Share ({simCustomerPct}%):</span>
-                  <strong>₹{simCustGross.toLocaleString('en-IN')}</strong>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', color: settings.enable_tds_deduction ? '#ea580c' : 'var(--text-dim)' }}>
-                  <span>TDS Tax ({settings.enable_tds_deduction ? `${settings.default_tds_pct}%` : 'Disabled'}):</span>
-                  <strong>- ₹{simTdsAmt.toLocaleString('en-IN')}</strong>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', fontWeight: 800 }}>
-                  <span style={{ color: 'var(--success)' }}>Net Customer Payout:</span>
-                  <span style={{ color: 'var(--success)', fontSize: '15px' }}>₹{simNetPayout.toLocaleString('en-IN')}</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', color: 'var(--text-muted)' }}>
-                  <span>Company Retained Share ({simCompanyPct}%):</span>
-                  <strong>₹{simCompanyGross.toLocaleString('en-IN')}</strong>
-                </div>
               </div>
             </div>
 

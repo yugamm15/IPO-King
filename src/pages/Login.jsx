@@ -212,6 +212,14 @@ export default function Login({ onLoginSuccess, isDark, onToggleTheme }) {
       } else {
         setLoading(false);
         setAuthError(data.message || 'Invalid OTP code. Please check your email.');
+        if (!/locked/i.test(data.message || '')) {
+          setOtpDigits(['', '', '', '', '', '']);
+          setTimeout(() => {
+            if (otpInputRefs.current && otpInputRefs.current[0]) {
+              otpInputRefs.current[0].focus();
+            }
+          }, 50);
+        }
       }
     } catch (err) {
       console.warn('API /verify-otp error:', err);
