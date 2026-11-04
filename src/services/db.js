@@ -1389,6 +1389,8 @@ export async function bulkInsertApplications(rows = [], targetIpoId = null) {
             birthdate: r.birthdate || r.dob || null,
             bank_account_no: r.bank_account_no || r.bank_account || '',
             mobile_number: r.mobile_number || r.phone || '',
+            phone_alternate: r.phone_alternate || r.phone_kono_chhe || r.kono_chhe || r['Phone Kono chhe'] || null,
+            phone_other: r.phone_other || r.other_phone || r['Phone'] || null,
             balance: Number(r.balance) || 50000,
             profit_share_percentage: Number(r.profit_share_percentage || r.profit_share || r.share) || 40
           };

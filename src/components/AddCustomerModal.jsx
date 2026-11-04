@@ -15,6 +15,37 @@ import {
 } from 'lucide-react';
 import { supabase, fetchBanks, getSystemSettings } from '../services/db';
 
+// Master document definitions for Customer Dossier (11 Required Documents)
+export const CUSTOMER_DOC_TYPES = [
+  { key: 'pan_card', label: 'Pan card', accept: 'image/*,.pdf' },
+  { key: 'aadhar_card', label: 'Aadhar Card', accept: 'image/*,.pdf', aliases: ['aadhaar_card'] },
+  { key: 'check', label: 'Check', accept: 'image/*,.pdf', aliases: ['cheque_proof', 'cheque'] },
+  { key: 'passbook', label: 'PassBook', accept: 'image/*,.pdf', aliases: ['passbook_proof'] },
+  { key: 'lc_birth_certificate', label: 'Lc/Birth Certificate', accept: 'image/*,.pdf', aliases: ['lc_birth_cert', 'birth_certificate', 'lc_birth_ccertificate'] },
+  { key: 'merrit_certificate', label: 'Merrit Certificate', accept: 'image/*,.pdf', aliases: ['merrit_cert', 'marriage_certificate'] },
+  { key: 'stamp_paper', label: 'Stamp paper', accept: 'image/*,.pdf', aliases: ['stamp_paper_proof'] },
+  { key: 'huf_did', label: 'Huf Did', accept: 'image/*,.pdf', aliases: ['huf_deed'] },
+  { key: 'passport_picture', label: 'Passport Size Picture', accept: 'image/*,.pdf', aliases: ['passport_photo', 'passport_pic'] },
+  { key: 'signature_arham', label: 'Signature Photo ( Arham )', accept: 'image/*,.pdf', aliases: ['sig_arham', 'signature_photo_arham'] },
+  { key: 'signature_bank', label: 'Signature Photo ( Bank )', accept: 'image/*,.pdf', aliases: ['sig_bank', 'signature_photo_bank'] },
+];
+
+export const createEmptyDocMap = () => {
+  const map = {};
+  CUSTOMER_DOC_TYPES.forEach((dt) => {
+    map[dt.key] = null;
+  });
+  return map;
+};
+
+export const createEmptyPreviewMap = () => {
+  const map = {};
+  CUSTOMER_DOC_TYPES.forEach((dt) => {
+    map[dt.key] = '';
+  });
+  return map;
+};
+
 export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustomerNo, initialData }) {
   const isEditMode = Boolean(initialData);
   const modalScrollRef = useRef(null);
@@ -49,19 +80,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
   const [beneficiaries, setBeneficiaries] = useState(['']);
 
-  const [documents, setDocuments] = useState({
-    pan_card: null,
-    aadhaar_card: null,
-    cheque_proof: null,
-    demat_proof: null
-  });
-
-  const [docPreviews, setDocPreviews] = useState({
-    pan_card: '',
-    aadhaar_card: '',
-    cheque_proof: '',
-    demat_proof: ''
-  });
+  const [documents, setDocuments] = useState(createEmptyDocMap);
+  const [docPreviews, setDocPreviews] = useState(createEmptyPreviewMap);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -119,9 +139,41 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         setBeneficiaries(bList.length > 0 ? bList : ['']);
       }
 
+      // Load existing document previews from initialData (documents object, address JSON, or customer_documents array)
+      let existingDocs = {};
       if (initialData.documents && typeof initialData.documents === 'object') {
-        setDocPreviews(initialData.documents);
+        existingDocs = { ...initialData.documents };
       }
+      if (initialData.address && typeof initialData.address === 'string' && initialData.address.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(initialData.address);
+          if (parsed && typeof parsed === 'object') {
+            existingDocs = { ...existingDocs, ...parsed };
+          }
+        } catch (_) {}
+      }
+      if (Array.isArray(initialData.customer_documents)) {
+        initialData.customer_documents.forEach(d => {
+          if (d.document_type && d.file_path) {
+            existingDocs[d.document_type] = d.file_path;
+          }
+        });
+      }
+
+      const resolvedPreviews = createEmptyPreviewMap();
+      CUSTOMER_DOC_TYPES.forEach(dt => {
+        let val = existingDocs[dt.key];
+        if (!val && dt.aliases) {
+          for (const alias of dt.aliases) {
+            if (existingDocs[alias]) {
+              val = existingDocs[alias];
+              break;
+            }
+          }
+        }
+        resolvedPreviews[dt.key] = val || '';
+      });
+      setDocPreviews(resolvedPreviews);
     } else {
       const targetNo = nextCustomerNo || 1;
       setFormData(prev => ({
@@ -131,6 +183,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         password_encrypted: prev.password_encrypted || 'Arham',
         profit_share_percentage: prev.profit_share_percentage || '40'
       }));
+      setDocuments(createEmptyDocMap());
+      setDocPreviews(createEmptyPreviewMap());
     }
   }, [initialData, nextCustomerNo]);
 
@@ -212,10 +266,17 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
   const uploadDocsToBucket = async (customerId) => {
     const uploadedUrls = {};
     for (const [docType, file] of Object.entries(documents)) {
-      if (!file) continue;
+      if (!file) {
+        // If there was an existing uploaded document preview (from edit mode), preserve it
+        if (docPreviews[docType] && typeof docPreviews[docType] === 'string' && !docPreviews[docType].startsWith('data:')) {
+          uploadedUrls[docType] = docPreviews[docType];
+        }
+        continue;
+      }
       try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `cust_${customerId || Date.now()}_${docType}.${fileExt}`;
+        const fileExt = file.name ? file.name.split('.').pop() : 'png';
+        const cleanDocType = docType.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `cust_${customerId || Date.now()}_${cleanDocType}_${Date.now()}.${fileExt}`;
         const filePath = `customer-documents/${fileName}`;
 
         const { data, error } = await supabase.storage
@@ -690,7 +751,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">15. Alt Phone (Kono chhe)</label>
+                <label className="input-label">15. PH KONO CHE</label>
                 <input
                   type="text"
                   name="phone_alternate"
@@ -714,7 +775,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">17. Other Phone Number</label>
+                <label className="input-label">17. PHONE</label>
                 <input
                   type="text"
                   name="phone_other"
@@ -831,7 +892,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
             </div>
           </div>
 
-          {/* Section 3: Document Uploads (Watermelon file-upload-2 style) */}
+          {/* Section 3: Document Uploads */}
           <div style={{
             background: 'rgba(4, 47, 46, 0.02)',
             border: '1px solid var(--panel-border)',
@@ -839,122 +900,92 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
             padding: '20px',
             marginBottom: '10px'
           }}>
-            <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '14px' }}>
-              KYC &amp; Demat Documents (PAN / Aadhaar / Cheque / CMR)
-            </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--brand-accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Required Customer Documents ({CUSTOMER_DOC_TYPES.length} Documents)
+              </span>
+              <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                Images &amp; PDF Allowed
+              </span>
+            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-              {/* PAN Card */}
-              <div style={{
-                background: 'var(--panel-bg)',
-                border: '1.5px dashed var(--panel-border)',
-                borderRadius: '16px',
-                padding: '14px',
-                textAlign: 'center',
-                position: 'relative'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>PAN Card Photo</span>
-                {docPreviews.pan_card ? (
-                  <div style={{ position: 'relative' }}>
-                    {docPreviews.pan_card.startsWith('data:image') ? (
-                      <img src={docPreviews.pan_card} alt="PAN Card" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+              {CUSTOMER_DOC_TYPES.map((dt) => {
+                const preview = docPreviews[dt.key];
+                const isImage = preview && (preview.startsWith('data:image') || preview.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i));
+                return (
+                  <div
+                    key={dt.key}
+                    style={{
+                      background: 'var(--panel-bg)',
+                      border: preview ? '1.5px solid var(--brand-accent)' : '1.5px dashed var(--panel-border)',
+                      borderRadius: '16px',
+                      padding: '14px',
+                      textAlign: 'center',
+                      position: 'relative',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      minHeight: '145px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)', lineHeight: '1.3' }}>
+                      {dt.label}
+                    </span>
+                    {preview ? (
+                      <div style={{ position: 'relative', width: '100%' }}>
+                        {isImage ? (
+                          <img
+                            src={preview}
+                            alt={dt.label}
+                            style={{ width: '100%', height: '84px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--panel-border)' }}
+                          />
+                        ) : (
+                          <div style={{ padding: '14px 4px', fontSize: '11px', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                            <FileText size={22} style={{ margin: '0 auto 6px auto', display: 'block', color: 'var(--brand-accent)' }} />
+                            {typeof preview === 'string' && preview.includes('/') ? preview.split('/').pop() : preview}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeDoc(dt.key)}
+                          title="Remove document"
+                          style={{
+                            position: 'absolute',
+                            top: 4,
+                            right: 4,
+                            background: 'var(--danger)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '22px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
                     ) : (
-                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.pan_card}</div>
+                      <label style={{ cursor: 'pointer', display: 'block', padding: '10px 4px' }}>
+                        <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
+                        <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload</span>
+                        <input
+                          type="file"
+                          accept={dt.accept || 'image/*,.pdf'}
+                          onChange={(e) => handleFileSelect(dt.key, e.target.files[0])}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
                     )}
-                    <button type="button" onClick={() => removeDoc('pan_card')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                   </div>
-                ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
-                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload PAN</span>
-                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('pan_card', e.target.files[0])} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
-
-              {/* Aadhaar Card */}
-              <div style={{
-                background: 'var(--panel-bg)',
-                border: '1.5px dashed var(--panel-border)',
-                borderRadius: '16px',
-                padding: '14px',
-                textAlign: 'center',
-                position: 'relative'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Aadhaar Card</span>
-                {docPreviews.aadhaar_card ? (
-                  <div style={{ position: 'relative' }}>
-                    {docPreviews.aadhaar_card.startsWith('data:image') ? (
-                      <img src={docPreviews.aadhaar_card} alt="Aadhaar" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                    ) : (
-                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.aadhaar_card}</div>
-                    )}
-                    <button type="button" onClick={() => removeDoc('aadhaar_card')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
-                  </div>
-                ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
-                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload Aadhaar</span>
-                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('aadhaar_card', e.target.files[0])} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
-
-              {/* Cancelled Cheque */}
-              <div style={{
-                background: 'var(--panel-bg)',
-                border: '1.5px dashed var(--panel-border)',
-                borderRadius: '16px',
-                padding: '14px',
-                textAlign: 'center',
-                position: 'relative'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Cancelled Cheque</span>
-                {docPreviews.cheque_proof ? (
-                  <div style={{ position: 'relative' }}>
-                    {docPreviews.cheque_proof.startsWith('data:image') ? (
-                      <img src={docPreviews.cheque_proof} alt="Cheque" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                    ) : (
-                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.cheque_proof}</div>
-                    )}
-                    <button type="button" onClick={() => removeDoc('cheque_proof')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
-                  </div>
-                ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
-                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload Cheque</span>
-                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('cheque_proof', e.target.files[0])} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
-
-              {/* Demat CMR Copy */}
-              <div style={{
-                background: 'var(--panel-bg)',
-                border: '1.5px dashed var(--panel-border)',
-                borderRadius: '16px',
-                padding: '14px',
-                textAlign: 'center',
-                position: 'relative'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px', color: 'var(--text-main)' }}>Demat CMR Copy</span>
-                {docPreviews.demat_proof ? (
-                  <div style={{ position: 'relative' }}>
-                    {docPreviews.demat_proof.startsWith('data:image') ? (
-                      <img src={docPreviews.demat_proof} alt="Demat Proof" style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                    ) : (
-                      <div style={{ padding: '16px 4px', fontSize: '11.5px', color: 'var(--text-muted)' }}><FileText size={20} /><br />{docPreviews.demat_proof}</div>
-                    )}
-                    <button type="button" onClick={() => removeDoc('demat_proof')} style={{ position: 'absolute', top: 3, right: 3, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
-                  </div>
-                ) : (
-                  <label style={{ cursor: 'pointer', display: 'block', padding: '12px 4px' }}>
-                    <UploadCloud size={24} style={{ color: 'var(--brand-accent)', margin: '0 auto 6px auto', display: 'block' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Upload CMR</span>
-                    <input type="file" accept="image/*,.pdf" onChange={(e) => handleFileSelect('demat_proof', e.target.files[0])} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
+                );
+              })}
             </div>
           </div>
 

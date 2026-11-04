@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { downloadCustomerPdf, downloadCustomerPassbookPdf } from '../utils/pdfGenerator';
 import { fetchCustomerPassbookLedger, getSecureDocumentUrl } from '../services/db';
+import { CUSTOMER_DOC_TYPES } from './AddCustomerModal';
 
 export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'passbook'
@@ -67,12 +68,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
     ? String(customer.beneficiary_name).split(',').map((b) => b.trim()).filter(Boolean)
     : [];
 
-  const docTypes = [
-    { key: 'pan_card', label: 'PAN Card Photo' },
-    { key: 'aadhaar_card', label: 'Aadhaar Card Photo' },
-    { key: 'cheque_proof', label: 'Cancelled Cheque' },
-    { key: 'demat_proof', label: 'Demat A/c Proof' }
-  ];
+  const docTypes = CUSTOMER_DOC_TYPES;
 
   // Ledger summary metrics
   const totalCredits = ledgerEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
@@ -340,7 +336,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                     <strong style={{ color: 'var(--success-text)' }}>₹ {Number(customer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>15. Alt Phone</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>15. Ph Kono Che</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.phone_alternate || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
@@ -348,7 +344,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                     <strong style={{ color: 'var(--text-main)' }}>{customer.email || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>17. Other Phone</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>17. Phone</span>
                     <strong style={{ color: 'var(--text-main)' }}>{customer.phone_other || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
@@ -408,7 +404,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
                   {docTypes.map((dt) => {
-                    const docUrl = docs[dt.key];
+                    const docUrl = docs[dt.key] || (dt.aliases ? dt.aliases.map(a => docs[a]).find(Boolean) : null);
                     return (
                       <div
                         key={dt.key}

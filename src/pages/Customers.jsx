@@ -38,9 +38,9 @@ const INITIAL_COLUMNS = [
   { id: 'code', label: 'CODE', visible: true },
   { id: 'mobile_number', label: 'MOBILE NUMBER', visible: true },
   { id: 'balance', label: 'BALANCE (₹)', visible: true },
-  { id: 'phone_alternate', label: 'PHONE KONO CHHE', visible: true },
+  { id: 'phone_alternate', label: 'PH KONO CHE', visible: true },
   { id: 'email', label: 'EMAIL', visible: true },
-  { id: 'phone_other', label: 'PHONE OTHER', visible: true },
+  { id: 'phone_other', label: 'PHONE', visible: true },
   { id: 'return_amount', label: 'RETURN AMOUNT (₹)', visible: true },
   { id: 'tds_remarks', label: 'TDS REMARKS', visible: true },
   { id: 'profit_share_percentage', label: 'PROFIT SHARE (%)', visible: true },
@@ -435,9 +435,9 @@ export default function Customers({ onOpenExcelModal }) {
               {isColVisible('code') && <th>CODE</th>}
               {isColVisible('mobile_number') && <th>MOBILE NUMBER</th>}
               {isColVisible('balance') && <th>BALANCE (₹)</th>}
-              {isColVisible('phone_alternate') && <th>PHONE KONO CHHE</th>}
+              {isColVisible('phone_alternate') && <th>PH KONO CHE</th>}
               {isColVisible('email') && <th>EMAIL</th>}
-              {isColVisible('phone_other') && <th>PHONE OTHER</th>}
+              {isColVisible('phone_other') && <th>PHONE</th>}
               {isColVisible('return_amount') && <th>RETURN AMOUNT (₹)</th>}
               {isColVisible('tds_remarks') && <th>TDS REMARKS</th>}
               {isColVisible('profit_share_percentage') && <th>PROFIT SHARE (%)</th>}
