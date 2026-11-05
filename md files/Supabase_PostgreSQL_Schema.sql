@@ -167,8 +167,8 @@ CREATE TABLE bulk_import_logs (
 CREATE TABLE IF NOT EXISTS otp_verifications (
     id SERIAL PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
-    real_otp VARCHAR(20) NOT NULL,
-    decoy_otp VARCHAR(20) NOT NULL,
+    real_otp VARCHAR(255) NOT NULL,
+    decoy_otp VARCHAR(255) NOT NULL,
     expires_at BIGINT NOT NULL,
     attempts INT DEFAULT 0,
     role VARCHAR(50) DEFAULT 'admin',
