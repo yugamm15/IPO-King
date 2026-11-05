@@ -1364,6 +1364,214 @@ export function subscribeToRealtimeChanges(onPayload) {
   }
 }
 
+export function normalizeCustomerRow(raw = {}) {
+  const norm = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined || v === null) continue;
+    const cleanKey = k.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleanVal = typeof v === 'string' ? v.trim() : v;
+
+    if (cleanKey === 'NO' || cleanKey === 'CUSTOMERNO' || cleanKey === 'NO.') {
+      norm.customer_no = parseInt(cleanVal, 10) || null;
+    } else if (cleanKey === 'NAME' || cleanKey === 'FULLNAME' || cleanKey === 'CUSTOMERNAME') {
+      norm.full_name = String(cleanVal);
+    } else if (cleanKey === 'CA' || cleanKey === 'CANUMBER' || cleanKey === 'CANO') {
+      norm.ca_number = String(cleanVal);
+    } else if (cleanKey === 'PAN' || cleanKey === 'PANNUMBER' || cleanKey === 'PANNO') {
+      norm.pan_number = String(cleanVal).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    } else if (cleanKey === 'AADHAAR' || cleanKey === 'AADHAR' || cleanKey === 'AADHAARCARD' || cleanKey === 'AADHAARNUMBER' || cleanKey === 'AADHAARCARDNO') {
+      norm.aadhaar_number = String(cleanVal).replace(/\D/g, '');
+    } else if (cleanKey === 'BIRTHDATE' || cleanKey === 'DOB' || cleanKey === 'DATEOFBIRTH' || cleanKey === 'BIRTH') {
+      norm.birthdate = cleanVal;
+    } else if (cleanKey === 'DPID' || cleanKey === 'DEMAT' || cleanKey === 'DEMATAC') {
+      norm.dpid = String(cleanVal);
+    } else if (cleanKey === 'BANKNAME' || cleanKey === 'BANK') {
+      norm.bank_name = String(cleanVal);
+    } else if (cleanKey === 'BANKACNO' || cleanKey === 'BANKACCOUNTNO' || cleanKey === 'BANKACCOUNT' || cleanKey === 'ACCOUNTNO' || cleanKey === 'ACNO') {
+      norm.bank_account_no = String(cleanVal);
+    } else if (cleanKey === 'LOGINID' || cleanKey === 'LOGIN' || cleanKey === 'USERID') {
+      norm.login_id = String(cleanVal);
+    } else if (cleanKey === 'PASS' || cleanKey === 'PASSWORD' || cleanKey === 'ARHAM') {
+      norm.password_encrypted = String(cleanVal) || 'Arham';
+    } else if (cleanKey === 'CODE' || cleanKey === 'CUSTOMERCODE') {
+      norm.code = String(cleanVal);
+    } else if (cleanKey === 'MOBILENUMBER' || cleanKey === 'MOBILE') {
+      norm.mobile_number = String(cleanVal);
+    } else if (cleanKey === 'BALANCE') {
+      norm.balance = parseFloat(cleanVal) || 0;
+    } else if (cleanKey.includes('KONO') || cleanKey === 'ALTPHONE' || cleanKey === 'PHONEEALTPHONE' || cleanKey === 'PHKONOCHHE') {
+      norm.phone_alternate = String(cleanVal);
+    } else if (cleanKey === 'EMAIL' || cleanKey === 'EMAILADDRESS') {
+      norm.email = String(cleanVal);
+    } else if (cleanKey === 'PHONE' || cleanKey === 'OTHERPHONE' || cleanKey === 'OTHERPHONENUMBER') {
+      norm.phone_other = String(cleanVal);
+    } else if (cleanKey === 'RETURN' || cleanKey === 'RETURNAMOUNT') {
+      norm.return_amount = parseFloat(cleanVal) || 0;
+    } else if (cleanKey === 'TDSREMARKS' || cleanKey === 'TDS' || cleanKey === 'REMARKS') {
+      norm.tds_remarks = String(cleanVal);
+    } else if (cleanKey.includes('PROFIT') || cleanKey.includes('SHARE')) {
+      norm.profit_share_percentage = parseFloat(cleanVal) || 40;
+    } else if (cleanKey.includes('BENEFICIARY')) {
+      norm.beneficiary_name = String(cleanVal);
+    }
+  }
+  return norm;
+}
+
+export function formatDateForDb(val) {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString().slice(0, 10);
+  }
+  const str = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // MM/DD/YYYY
+  const mdy = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (mdy && Number(mdy[1]) <= 12 && Number(mdy[2]) <= 31) {
+    const month = mdy[1].padStart(2, '0');
+    const day = mdy[2].padStart(2, '0');
+    const year = mdy[3].length === 2 ? '19' + mdy[3] : mdy[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+export async function bulkImportCustomers(customerRows = []) {
+  if (!customerRows || customerRows.length === 0) {
+    return { count: 0, total: 0, errors: ['No data rows found to import.'] };
+  }
+
+  let successCount = 0;
+  const errors = [];
+
+  let currentMaxNo = 0;
+  try {
+    const { data: maxRows } = await supabase
+      .from('customers')
+      .select('customer_no')
+      .order('customer_no', { ascending: false })
+      .limit(1);
+    if (maxRows && maxRows.length > 0) {
+      currentMaxNo = Number(maxRows[0].customer_no) || 0;
+    }
+  } catch (_) {}
+
+  for (let i = 0; i < customerRows.length; i++) {
+    const raw = customerRows[i];
+    const rowNum = i + 2;
+    const r = normalizeCustomerRow(raw);
+
+    if (!r.pan_number && !r.full_name && !r.mobile_number) {
+      continue;
+    }
+
+    if (!r.pan_number) {
+      errors.push(`Row ${rowNum}: Skipped (Missing required PAN Number for "${r.full_name || 'Customer'}")`);
+      continue;
+    }
+
+    try {
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('id, customer_no')
+        .eq('pan_number', r.pan_number)
+        .maybeSingle();
+
+      let targetNo = r.customer_no;
+      if (!targetNo) {
+        if (existing?.customer_no) {
+          targetNo = existing.customer_no;
+        } else {
+          currentMaxNo++;
+          targetNo = currentMaxNo;
+        }
+      } else if (targetNo > currentMaxNo) {
+        currentMaxNo = targetNo;
+      }
+
+      const payload = {
+        customer_no: targetNo,
+        full_name: r.full_name || 'Customer',
+        name: r.full_name || 'Customer',
+        ca_number: r.ca_number || null,
+        pan_number: r.pan_number,
+        aadhaar_number: r.aadhaar_number || null,
+        birthdate: formatDateForDb(r.birthdate),
+        dpid: r.dpid || null,
+        bank_name: r.bank_name || null,
+        bank_account_no: r.bank_account_no || null,
+        login_id: r.login_id || null,
+        password_encrypted: r.password_encrypted || 'Arham',
+        code: r.code || `IPO-${String(targetNo).padStart(3, '0')}`,
+        mobile_number: r.mobile_number || null,
+        balance: typeof r.balance === 'number' ? r.balance : 0,
+        phone_alternate: r.phone_alternate || null,
+        email: r.email || null,
+        phone_other: r.phone_other || null,
+        return_amount: typeof r.return_amount === 'number' ? r.return_amount : 0,
+        tds_remarks: r.tds_remarks || null,
+        profit_share_percentage: typeof r.profit_share_percentage === 'number' ? r.profit_share_percentage : 40,
+        beneficiary_name: r.beneficiary_name || null,
+        kyc_status: 'verified'
+      };
+
+      let custId = existing?.id;
+      if (existing?.id) {
+        const { error: upErr } = await supabase
+          .from('customers')
+          .update(payload)
+          .eq('id', existing.id);
+        if (upErr) throw upErr;
+      } else {
+        const { data: inserted, error: inErr } = await supabase
+          .from('customers')
+          .insert([payload])
+          .select('id')
+          .single();
+        if (inErr) throw inErr;
+        custId = inserted?.id;
+      }
+
+      if (r.beneficiary_name && custId) {
+        try {
+          const bNames = String(r.beneficiary_name).split(',').map(b => b.trim()).filter(Boolean);
+          if (bNames.length > 0) {
+            await supabase.from('customer_beneficiaries').delete().eq('customer_id', custId);
+            const bRecords = bNames.map(b => ({
+              customer_id: custId,
+              beneficiary_name: b
+            }));
+            await supabase.from('customer_beneficiaries').insert(bRecords);
+          }
+        } catch (_) {}
+      }
+
+      successCount++;
+    } catch (err) {
+      console.warn(`[Bulk Import] Error on row ${rowNum}:`, err.message);
+      errors.push(`Row ${rowNum} (${r.pan_number}): ${err.message || 'Database error'}`);
+    }
+  }
+
+  invalidateDbCache();
+  return { count: successCount, total: customerRows.length, errors };
+}
+
 export async function bulkInsertApplications(rows = [], targetIpoId = null) {
   if (!rows || rows.length === 0) return { count: 0 };
   

@@ -11,7 +11,8 @@ import {
   FileCheck
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext.jsx';
-import { bulkInsertApplications } from '../services/db.js';
+import * as XLSX from 'xlsx';
+import { bulkImportCustomers, bulkInsertApplications, supabase } from '../services/db.js';
 
 /**
  * Excel Customer Manager Modal powered by Watermelon UI File-Upload-2 & Hero-11 Theme
@@ -73,81 +74,78 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
     setStatusMessage(`File "${file.name}" ready to import.`);
   };
 
-  const parseCsvText = (text) => {
-    const lines = text.split(/\r\n|\n/).filter(line => line.trim());
-    if (lines.length <= 1) return [];
-
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
-    const rows = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      if (values.length === 0 || !values[0]) continue;
-
-      const obj = {};
-      headers.forEach((h, idx) => {
-        const val = values[idx] || '';
-        if (h.includes('NAME')) obj.name = val;
-        else if (h.includes('PAN')) obj.pan = val;
-        else if (h.includes('AADHAAR') || h.includes('AADHAR')) obj.aadhaar = val;
-        else if (h.includes('BIRTH') || h.includes('DOB')) obj.birthdate = val;
-        else if (h.includes('BANK')) obj.bank_account = val;
-        else if (h.includes('MOBILE') || h.includes('PHONE')) obj.phone = val;
-        else if (h.includes('BALANCE')) obj.balance = val;
-        else if (h.includes('QTY') || h.includes('LOT')) obj.quantity = val;
-        else if (h.includes('AMOUNT') || h.includes('RETURN')) obj.bid_amount = val;
-        else if (h.includes('SHARE') || h.includes('PROFIT')) obj.profit_share_percentage = val;
-      });
-
-      if (!obj.name && values[1]) obj.name = values[1];
-      if (!obj.pan && values[3]) obj.pan = values[3];
-      if (!obj.bank_account && values[5]) obj.bank_account = values[5];
-
-      rows.push(obj);
-    }
-    return rows;
-  };
-
   const handleImportSubmit = async () => {
     if (!selectedFile) {
-      showToast('Please select an Excel (.xlsx, .csv) file to import.', 'warning');
+      showToast('Please select an Excel (.xlsx, .xls, .csv) file to import.', 'warning');
       return;
     }
 
     setFileStatus('uploading');
-    setStatusMessage('Parsing records and syncing into database ledger...');
+    setStatusMessage('Reading workbook and parsing customer columns...');
 
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const text = e.target.result;
-        const parsedRows = parseCsvText(text);
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          const firstSheet = workbook.SheetNames[0];
 
-        if (parsedRows.length === 0) {
+          if (!firstSheet) {
+            setFileStatus('error');
+            setStatusMessage('⚠️ The uploaded workbook contains no sheets.');
+            showToast('No sheets found in Excel workbook.', 'warning');
+            return;
+          }
+
+          const worksheet = workbook.Sheets[firstSheet];
+          const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
+
+          if (!rawRows || rawRows.length === 0) {
+            setFileStatus('error');
+            setStatusMessage('⚠️ No customer data rows found. Check column headers.');
+            showToast('No customer data rows found to import.', 'warning');
+            return;
+          }
+
+          setStatusMessage(`Syncing ${rawRows.length} customer records into database...`);
+          const result = await bulkImportCustomers(rawRows);
+
+          if (result.count > 0) {
+            setFileStatus('success');
+            const skipMsg = result.errors && result.errors.length > 0 ? ` (${result.errors.length} skipped)` : '';
+            setStatusMessage(`✅ Success! Imported / updated ${result.count} customers${skipMsg}.`);
+            showToast(`Successfully imported ${result.count} customers!`, 'success');
+
+            // Dispatch global event so Customers page reloads immediately
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('ipoking:refresh-data'));
+            }
+
+            setTimeout(() => {
+              setSelectedFile(null);
+              setFileStatus('idle');
+              setStatusMessage('');
+              onClose();
+            }, 1400);
+          } else {
+            setFileStatus('error');
+            const firstErr = result.errors && result.errors[0] ? result.errors[0] : 'Could not save customer rows.';
+            setStatusMessage(`❌ ${firstErr}`);
+            showToast(firstErr, 'error');
+          }
+        } catch (innerErr) {
+          console.error('Spreadsheet processing error:', innerErr);
           setFileStatus('error');
-          setStatusMessage('⚠️ No valid data rows found. Check column headers.');
-          showToast('No valid rows found to import', 'warning');
-          return;
+          setStatusMessage(`❌ Error parsing file: ${innerErr.message}`);
+          showToast(`Error parsing file: ${innerErr.message}`, 'error');
         }
-
-        const result = await bulkInsertApplications(parsedRows);
-
-        setFileStatus('success');
-        setStatusMessage(`✅ Success! Imported ${result.count} customer applications.`);
-        showToast(`Successfully imported ${result.count} customer applications!`, 'success');
-
-        setTimeout(() => {
-          setSelectedFile(null);
-          setFileStatus('idle');
-          setStatusMessage('');
-          onClose();
-        }, 1200);
       };
-      reader.readAsText(selectedFile);
+      reader.readAsArrayBuffer(selectedFile);
     } catch (err) {
-      console.error('File import error:', err);
+      console.error('File read error:', err);
       setFileStatus('error');
-      setStatusMessage('❌ Error importing file. Please check format.');
+      setStatusMessage('❌ Error reading file. Please check format.');
       showToast('Failed to import file.', 'error');
     }
   };
@@ -159,73 +157,75 @@ export default function ExcelImportModal({ isOpen, onClose, customers = [] }) {
       'RETURN', 'TDS remarks', 'PROFIT SHARE (%)', 'Beneficiary'
     ];
     const sampleRow = [
-      '101', 'Amit Patel', 'AC123456', 'AAAPA1234X', '567812349012', '1992-05-15', '1208160012345678', 'HDFC Bank', '50100234567890',
-      'amit_p', 'Secret@123', 'IPO-101', '9876543210', '50000', '9876543211',
-      'amit@example.com', '9123456789', '1500', '10% TDS Deducted', '40', 'Priya Patel'
+      1, 'Amit Patel', 'AC123456', 'AAAPA1234X', '567812349012', '1992-05-15', '1208160012345678', 'HDFC Bank', '50100234567890',
+      'amit_p', 'Arham', 'IPO-001', '9876543210', 50000, '9876543211',
+      'amit@example.com', '9123456789', 1500, '10% TDS Deducted', 40, 'Priya Patel'
     ];
-    const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'IPO_KING_Customer_Import_Template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Customers');
+    XLSX.writeFile(wb, 'IPO_KING_Customer_Import_Template.xlsx');
   };
 
-  const handleExportCustomers = () => {
+  const handleExportCustomers = async () => {
     const headers = [
       'NO.', 'NAME', 'CA', 'PAN', 'AADHAAR', 'BIRTHDATE', 'DPID', 'BANK NAME', 'Bank A/c No.', 'Login ID', 'PASS',
       'CODE', 'Mobile Number', 'BALANCE', 'Phone Kono chhe', 'email', 'Phone',
       'RETURN', 'TDS remarks', 'PROFIT SHARE (%)', 'Beneficiary'
     ];
 
-    const dataToExport = customers && customers.length > 0 ? customers : [
-      {
-        customer_no: 101, full_name: 'Sample Customer', ca_number: 'AC123456', pan_number: 'ABCDE1234F',
-        aadhaar_number: '567812349012', birthdate: '1992-05-15',
-        dpid: '1208160012345678', bank_name: 'HDFC Bank', bank_account_no: '50100234567890', login_id: 'sample_user',
-        password_encrypted: '••••••••', code: 'IPO-101', mobile_number: '9876543210',
-        balance: 50000, phone_alternate: '9876543211', email: 'sample@email.com',
-        phone_other: '9123456789', return_amount: 1500, tds_remarks: '10% TDS Deducted',
-        profit_share_percentage: 40, beneficiary_name: 'Beneficiary Name'
-      }
-    ];
+    let dataToExport = customers && customers.length > 0 ? customers : [];
+    if (dataToExport.length === 0) {
+      try {
+        const { data } = await supabase.from('customers').select('*').order('customer_no', { ascending: true });
+        if (data && data.length > 0) {
+          dataToExport = data;
+        }
+      } catch (_) {}
+    }
+
+    if (dataToExport.length === 0) {
+      dataToExport = [
+        {
+          customer_no: 1, full_name: 'Sample Customer', ca_number: 'AC123456', pan_number: 'ABCDE1234F',
+          aadhaar_number: '567812349012', birthdate: '1992-05-15',
+          dpid: '1208160012345678', bank_name: 'HDFC Bank', bank_account_no: '50100234567890', login_id: 'sample_user',
+          password_encrypted: 'Arham', code: 'IPO-001', mobile_number: '9876543210',
+          balance: 50000, phone_alternate: '9876543211', email: 'sample@email.com',
+          phone_other: '9123456789', return_amount: 1500, tds_remarks: '10% TDS Deducted',
+          profit_share_percentage: 40, beneficiary_name: 'Beneficiary Name'
+        }
+      ];
+    }
 
     const rows = dataToExport.map(c => [
       c.customer_no || '',
-      `"${(c.full_name || c.name || '').replace(/"/g, '""')}"`,
-      `"${(c.ca_number || '').replace(/"/g, '""')}"`,
-      `"${(c.pan_number || '').replace(/"/g, '""')}"`,
-      `"${(c.aadhaar_number || c.aadhar_number || '').replace(/"/g, '""')}"`,
-      `"${(c.birthdate || c.dob || '').replace(/"/g, '""')}"`,
-      `"${(c.dpid || '').replace(/"/g, '""')}"`,
-      `"${(c.bank_name || '').replace(/"/g, '""')}"`,
-      `"${(c.bank_account_no || '').replace(/"/g, '""')}"`,
-      `"${(c.login_id || '').replace(/"/g, '""')}"`,
-      `"${(c.password_encrypted || '').replace(/"/g, '""')}"`,
-      `"${(c.code || '').replace(/"/g, '""')}"`,
-      `"${(c.mobile_number || '').replace(/"/g, '""')}"`,
+      c.full_name || c.name || '',
+      c.ca_number || '',
+      c.pan_number || '',
+      c.aadhaar_number || c.aadhar_number || '',
+      c.birthdate || c.dob || '',
+      c.dpid || '',
+      c.bank_name || '',
+      c.bank_account_no || '',
+      c.login_id || '',
+      c.password_encrypted || '',
+      c.code || '',
+      c.mobile_number || '',
       c.balance || 0,
-      `"${(c.phone_alternate || '').replace(/"/g, '""')}"`,
-      `"${(c.email || '').replace(/"/g, '""')}"`,
-      `"${(c.phone_other || '').replace(/"/g, '""')}"`,
+      c.phone_alternate || '',
+      c.email || '',
+      c.phone_other || '',
       c.return_amount || 0,
-      `"${(c.tds_remarks || '').replace(/"/g, '""')}"`,
+      c.tds_remarks || '',
       c.profit_share_percentage !== undefined && c.profit_share_percentage !== null ? c.profit_share_percentage : 40,
-      `"${(c.beneficiary_name || '').replace(/"/g, '""')}"`
+      c.beneficiary_name || ''
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `IPO_KING_Customers_Export_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Customers');
+    XLSX.writeFile(wb, `IPO_KING_Customers_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const formatFileSize = (bytes) => {

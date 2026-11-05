@@ -134,6 +134,12 @@ export default function Customers({ onOpenExcelModal }) {
       }
     }
     loadCustomers();
+
+    const handleRefresh = () => {
+      loadCustomers();
+    };
+    window.addEventListener('ipoking:refresh-data', handleRefresh);
+    return () => window.removeEventListener('ipoking:refresh-data', handleRefresh);
   }, []);
 
   const toggleColumn = (colId) => {
