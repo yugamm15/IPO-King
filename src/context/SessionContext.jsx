@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { clearSession, loadSession, saveSession } from '../services/session';
 
 const SessionContext = createContext(null);
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
 
 export function SessionProvider({ children }) {
