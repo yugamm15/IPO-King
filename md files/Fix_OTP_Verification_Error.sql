@@ -33,3 +33,4 @@ ALTER TABLE IF EXISTS otp_verifications DISABLE ROW LEVEL SECURITY;
 
 -- 4. Clean up any stale expired records
 DELETE FROM otp_verifications WHERE expires_at < (EXTRACT(EPOCH FROM NOW()) * 1000);
+
