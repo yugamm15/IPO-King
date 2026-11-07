@@ -18,11 +18,24 @@ export default function CashWithdrawalModal({
   isOpen,
   onClose,
   customer,
+  customers = [],
   onSuccess
 }) {
-  if (!isOpen || !customer) return null;
+  const [selectedCustomerId, setSelectedCustomerId] = useState(customer?.id || '');
 
-  const currentBalance = Number(customer.balance) || 0;
+  React.useEffect(() => {
+    if (customer?.id) {
+      setSelectedCustomerId(customer.id);
+    } else if (customers && customers.length > 0 && !selectedCustomerId) {
+      setSelectedCustomerId(customers[0].id);
+    }
+  }, [customer, customers]);
+
+  if (!isOpen) return null;
+
+  const activeCustomer = customer || (customers && customers.find(c => String(c.id) === String(selectedCustomerId))) || (customers && customers[0]) || null;
+  const currentBalance = Number(activeCustomer?.balance) || 0;
+
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMode, setPaymentMode] = useState('Cash');
@@ -49,6 +62,11 @@ export default function CashWithdrawalModal({
     setErrorMsg('');
     setSuccessMsg('');
 
+    if (!activeCustomer) {
+      setErrorMsg('Please select a valid customer.');
+      return;
+    }
+
     if (!withdrawAmountNum || withdrawAmountNum <= 0) {
       setErrorMsg('Please enter a valid withdrawal amount greater than 0.');
       return;
@@ -64,7 +82,7 @@ export default function CashWithdrawalModal({
     setIsSubmitting(true);
     try {
       const result = await recordCashWithdrawal({
-        customerId: customer.id,
+        customerId: activeCustomer.id,
         amount: withdrawAmountNum,
         paymentMode,
         referenceNo,
@@ -74,7 +92,7 @@ export default function CashWithdrawalModal({
 
       if (downloadVoucher) {
         try {
-          downloadCashWithdrawalReceiptPdf(customer, {
+          downloadCashWithdrawalReceiptPdf(activeCustomer, {
             ...result.withdrawal,
             previous_balance: currentBalance,
             new_balance: result.newBalance
@@ -88,7 +106,7 @@ export default function CashWithdrawalModal({
 
       setTimeout(() => {
         if (onSuccess) {
-          onSuccess(result.newBalance, result.withdrawal);
+          onSuccess(result.newBalance, result.withdrawal, activeCustomer.id);
         }
         onClose();
       }, 1000);
@@ -168,6 +186,27 @@ export default function CashWithdrawalModal({
           </button>
         </div>
 
+        {/* Customer Selector (if opened from top toolbar without pre-selected customer) */}
+        {!customer && customers.length > 0 && (
+          <div style={{ padding: '14px 24px', background: 'rgba(15, 118, 110, 0.08)', borderBottom: '1px solid var(--panel-border)' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#0f766e', marginBottom: '6px' }}>
+              Select Customer for Cash Withdrawal:
+            </label>
+            <select
+              className="form-control"
+              value={selectedCustomerId}
+              onChange={(e) => setSelectedCustomerId(e.target.value)}
+              style={{ fontSize: '13px', fontWeight: 600 }}
+            >
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.customer_no || c.id} — {c.full_name || c.name} (PAN: {c.pan_number || 'N/A'}) — Bal: ₹{Number(c.balance || 0).toLocaleString('en-IN')}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Customer Badge Bar */}
         <div
           style={{
@@ -183,11 +222,11 @@ export default function CashWithdrawalModal({
         >
           <div>
             <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>
-              {customer.full_name || customer.name}
+              {activeCustomer?.full_name || activeCustomer?.name || 'Customer'}
             </strong>
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              PAN: <code style={{ fontWeight: 700, color: 'var(--primary)' }}>{customer.pan_number || 'N/A'}</code>
-              {customer.customer_no ? ` • Customer #${customer.customer_no}` : ''}
+              PAN: <code style={{ fontWeight: 700, color: 'var(--primary)' }}>{activeCustomer?.pan_number || 'N/A'}</code>
+              {activeCustomer?.customer_no ? ` • Customer #${activeCustomer.customer_no}` : ''}
             </span>
           </div>
 

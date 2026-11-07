@@ -11,9 +11,11 @@ import {
   ShieldCheck,
   Building2,
   Lock,
-  CreditCard
+  CreditCard,
+  Banknote
 } from 'lucide-react';
 import { supabase, fetchBanks, getSystemSettings } from '../services/db';
+import CashWithdrawalModal from './CashWithdrawalModal';
 
 // Master document definitions for Customer Dossier (11 Required Documents)
 export const CUSTOMER_DOC_TYPES = [
@@ -86,6 +88,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [isWithdrawalOpen, setIsWithdrawalOpen] = useState(false);
 
   useEffect(() => {
     async function loadBankOptions() {
@@ -329,7 +332,13 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
     try {
       const uploadedDocUrls = await uploadDocsToBucket(formData.pan_number);
-      const profitPctNum = !isNaN(parseFloat(formData.profit_share_percentage)) ? parseFloat(formData.profit_share_percentage) : 40;
+      const rawProfit = String(formData.profit_share_percentage ?? '').trim();
+      let profitPctNum = 40;
+      if (rawProfit === '0' || rawProfit === 0) {
+        profitPctNum = 0;
+      } else if (rawProfit !== '' && !isNaN(parseFloat(rawProfit))) {
+        profitPctNum = parseFloat(rawProfit);
+      }
 
       // Preserve existing metadata (like withdrawals) from initialData.address if present
       let existingAddressMeta = {};
@@ -463,7 +472,10 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
       setSuccessMsg(isEditMode ? 'Customer profile updated successfully!' : 'Customer added successfully!');
       
-      const newCust = savedCust ? { ...savedCust, documents: uploadedDocUrls } : { ...payload, id: targetCustId, documents: uploadedDocUrls };
+      const newCust = savedCust
+        ? { ...savedCust, documents: uploadedDocUrls, profit_share_percentage: profitPctNum }
+        : { ...payload, id: targetCustId, documents: uploadedDocUrls, profit_share_percentage: profitPctNum };
+
       if (onCustomerAdded) {
         onCustomerAdded(newCust, isEditMode);
       }
@@ -771,7 +783,30 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               </div>
 
               <div>
-                <label className="input-label">14. BALANCE (₹)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="input-label" style={{ margin: 0 }}>14. BALANCE (₹)</label>
+                  {isEditMode && initialData?.id && (
+                    <button
+                      type="button"
+                      onClick={() => setIsWithdrawalOpen(true)}
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#0f766e',
+                        borderColor: '#0f766e',
+                        background: 'rgba(15, 118, 110, 0.08)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Withdraw cash for this customer"
+                    >
+                      <Banknote size={13} /> Cash Withdrawal
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   name="balance"
@@ -845,8 +880,8 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label className="input-label" style={{ margin: 0 }}>20. PROFIT SHARE (%)</label>
-                  <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px' }}>
-                    Treasury: {Math.max(0, 100 - (!isNaN(parseFloat(formData.profit_share_percentage)) ? parseFloat(formData.profit_share_percentage) : 40))}%
+                  <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px', fontWeight: 800 }}>
+                    Treasury: {Math.max(0, 100 - (formData.profit_share_percentage === '' ? 0 : (!isNaN(parseFloat(formData.profit_share_percentage)) ? parseFloat(formData.profit_share_percentage) : 0)))}%
                   </span>
                 </div>
                 <input
@@ -855,14 +890,35 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                   min="0"
                   max="100"
                   step="0.5"
-                  placeholder="40"
+                  placeholder="0"
                   value={formData.profit_share_percentage}
                   onChange={handleChange}
                   className="input-field"
-                  style={{ fontWeight: 700, color: 'var(--brand-accent)' }}
+                  style={{ fontWeight: 800, color: 'var(--brand-accent)' }}
                 />
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                  {[0, 20, 40, 50, 60, 100].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, profit_share_percentage: String(pct) }))}
+                      style={{
+                        border: String(formData.profit_share_percentage) === String(pct) ? '1.5px solid #0f766e' : '1px solid var(--panel-border)',
+                        background: String(formData.profit_share_percentage) === String(pct) ? 'rgba(15, 118, 110, 0.12)' : 'var(--panel-bg)',
+                        color: String(formData.profit_share_percentage) === String(pct) ? '#0f766e' : 'var(--text-main)',
+                        borderRadius: '6px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {pct === 0 ? '0% (Zero Share)' : pct === 100 ? '100% (Full Share)' : `${pct}%`}
+                    </button>
+                  ))}
+                </div>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                  Default is 40% (Editable per customer agreement)
+                  Default is 40% (Can be set to 0%, 100% or any percentage)
                 </span>
               </div>
             </div>
@@ -1046,6 +1102,18 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
           </div>
         </form>
       </div>
+
+      {/* Cash Withdrawal Modal */}
+      {isWithdrawalOpen && initialData && (
+        <CashWithdrawalModal
+          isOpen={isWithdrawalOpen}
+          onClose={() => setIsWithdrawalOpen(false)}
+          customer={initialData}
+          onSuccess={(newBal) => {
+            setFormData((prev) => ({ ...prev, balance: String(newBal) }));
+          }}
+        />
+      )}
     </div>
   );
 }

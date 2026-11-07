@@ -128,18 +128,30 @@ export default function Customers({ onOpenExcelModal }) {
             }
 
             let docs = c.documents;
+            let parsedAddr = null;
+            if (c.address && typeof c.address === 'string' && c.address.startsWith('{')) {
+              try {
+                parsedAddr = JSON.parse(c.address);
+                if (!docs) docs = parsedAddr;
+              } catch (_) {}
+            }
             if (!docs && c.customer_documents && c.customer_documents.length > 0) {
               docs = {};
               c.customer_documents.forEach((d) => {
                 docs[d.document_type || 'doc'] = d.file_path;
               });
             }
-            if (!docs && c.address && typeof c.address === 'string' && c.address.startsWith('{')) {
-              try { docs = JSON.parse(c.address); } catch (_) {}
+
+            let pShare = 40;
+            if (c.profit_share_percentage !== undefined && c.profit_share_percentage !== null && c.profit_share_percentage !== '') {
+              pShare = Number(c.profit_share_percentage);
+            } else if (parsedAddr?.__meta?.profit_share_percentage !== undefined && parsedAddr.__meta.profit_share_percentage !== null && parsedAddr.__meta.profit_share_percentage !== '') {
+              pShare = Number(parsedAddr.__meta.profit_share_percentage);
             }
 
             return {
               ...c,
+              profit_share_percentage: pShare,
               beneficiary_name: bName,
               documents: docs || {}
             };
@@ -279,14 +291,26 @@ export default function Customers({ onOpenExcelModal }) {
             bName = c.customer_beneficiaries.map((b) => b.beneficiary_name).join(', ');
           }
           let docs = c.documents;
+          let parsedAddr = null;
+          if (c.address && typeof c.address === 'string' && c.address.startsWith('{')) {
+            try {
+              parsedAddr = JSON.parse(c.address);
+              if (!docs) docs = parsedAddr;
+            } catch (_) {}
+          }
           if (!docs && c.customer_documents && c.customer_documents.length > 0) {
             docs = {};
             c.customer_documents.forEach((d) => { docs[d.document_type || 'doc'] = d.file_path; });
           }
-          if (!docs && c.address && typeof c.address === 'string' && c.address.startsWith('{')) {
-            try { docs = JSON.parse(c.address); } catch (_) {}
+
+          let pShare = 40;
+          if (c.profit_share_percentage !== undefined && c.profit_share_percentage !== null && c.profit_share_percentage !== '') {
+            pShare = Number(c.profit_share_percentage);
+          } else if (parsedAddr?.__meta?.profit_share_percentage !== undefined && parsedAddr.__meta.profit_share_percentage !== null && parsedAddr.__meta.profit_share_percentage !== '') {
+            pShare = Number(parsedAddr.__meta.profit_share_percentage);
           }
-          return { ...c, beneficiary_name: bName, documents: docs || {} };
+
+          return { ...c, profit_share_percentage: pShare, beneficiary_name: bName, documents: docs || {} };
         });
         setCustomers(normalized);
       }
@@ -392,6 +416,28 @@ export default function Customers({ onOpenExcelModal }) {
             style={{ padding: '9px 16px' }}
           >
             <FileSpreadsheet size={16} /> Bulk Import / Export
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setSelectedCustomerForWithdrawal(null);
+              setIsWithdrawalModalOpen(true);
+            }}
+            style={{
+              padding: '9px 16px',
+              color: '#0f766e',
+              borderColor: '#0f766e',
+              background: 'rgba(15, 118, 110, 0.08)',
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title="Record cash payout for a customer"
+          >
+            <Banknote size={16} /> Cash Withdrawal
           </button>
 
           <button
@@ -574,44 +620,72 @@ export default function Customers({ onOpenExcelModal }) {
                     </td>
                   )}
                   <td style={{ textAlign: 'center' }}>
-                    {/* Watermelon Dropdown-Menu-4 for Row Actions */}
-                    <ActionDropdown
-                      items={[
-                        {
-                          icon: Eye,
-                          label: 'View Dossier',
-                          description: 'KYC & Demat details',
-                          onClick: () => setSelectedCustomerForDetails(c)
-                        },
-                        {
-                          icon: Banknote,
-                          label: 'Cash Withdrawal',
-                          description: 'Record cash payment & deduct balance',
-                          onClick: () => {
-                            setSelectedCustomerForWithdrawal(c);
-                            setIsWithdrawalModalOpen(true);
-                          }
-                        },
-                        {
-                          icon: FileDown,
-                          label: 'Download PDF',
-                          description: 'Export PDF dossier',
-                          onClick: async () => {
-                            try {
-                              await downloadCustomerPdf(c);
-                            } catch (err) {
-                              console.error('PDF download error:', err);
+                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerForWithdrawal(c);
+                          setIsWithdrawalModalOpen(true);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: '1px solid rgba(15, 118, 110, 0.35)',
+                          background: 'rgba(15, 118, 110, 0.08)',
+                          color: '#0f766e',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title="Withdraw Cash"
+                      >
+                        <Banknote size={12} />
+                        Withdraw
+                      </button>
+
+                      {/* Watermelon Dropdown-Menu-4 for Row Actions */}
+                      <ActionDropdown
+                        items={[
+                          {
+                            icon: Eye,
+                            label: 'View Dossier',
+                            description: 'KYC & Demat details',
+                            onClick: () => setSelectedCustomerForDetails(c)
+                          },
+                          {
+                            icon: Banknote,
+                            label: 'Cash Withdrawal',
+                            description: 'Record cash payment & deduct balance',
+                            onClick: () => {
+                              setSelectedCustomerForWithdrawal(c);
+                              setIsWithdrawalModalOpen(true);
                             }
+                          },
+                          {
+                            icon: FileDown,
+                            label: 'Download PDF',
+                            description: 'Export PDF dossier',
+                            onClick: async () => {
+                              try {
+                                await downloadCustomerPdf(c);
+                              } catch (err) {
+                                console.error('PDF download error:', err);
+                              }
+                            }
+                          },
+                          {
+                            icon: Edit,
+                            label: 'Edit Customer',
+                            description: 'Update bank or credentials',
+                            onClick: () => { setSelectedCustomerForEdit(c); setIsAddModalOpen(true); }
                           }
-                        },
-                        {
-                          icon: Edit,
-                          label: 'Edit Customer',
-                          description: 'Update bank or credentials',
-                          onClick: () => { setSelectedCustomerForEdit(c); setIsAddModalOpen(true); }
-                        }
-                      ]}
-                    />
+                        ]}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))
@@ -678,7 +752,7 @@ export default function Customers({ onOpenExcelModal }) {
       )}
 
       {/* Cash Withdrawal Modal */}
-      {selectedCustomerForWithdrawal && (
+      {isWithdrawalModalOpen && (
         <CashWithdrawalModal
           isOpen={isWithdrawalModalOpen}
           onClose={() => {
@@ -686,12 +760,17 @@ export default function Customers({ onOpenExcelModal }) {
             setSelectedCustomerForWithdrawal(null);
           }}
           customer={selectedCustomerForWithdrawal}
-          onSuccess={(newBalance) => {
-            setCustomers((prev) =>
-              prev.map((c) =>
-                c.id === selectedCustomerForWithdrawal.id ? { ...c, balance: newBalance } : c
-              )
-            );
+          customers={customers}
+          onSuccess={(newBalance, updatedCust) => {
+            const targetId = updatedCust?.id || selectedCustomerForWithdrawal?.id;
+            if (targetId) {
+              setCustomers((prev) =>
+                prev.map((c) =>
+                  c.id === targetId ? { ...c, balance: newBalance } : c
+                )
+              );
+            }
+            loadCustomers();
           }}
         />
       )}
