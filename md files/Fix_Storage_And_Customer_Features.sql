@@ -73,3 +73,4 @@ USING (bucket_id = 'customer-docs');
 
 -- 6. VERIFICATION QUERY
 SELECT 'Success! Schema and Storage Bucket updated successfully.' AS status;
+
