@@ -13,10 +13,12 @@ import {
   Phone,
   Mail,
   MoreVertical,
-  Trash2
+  Trash2,
+  Banknote
 } from 'lucide-react';
 import AddCustomerModal from '../components/AddCustomerModal';
 import CustomerDetailsModal from '../components/CustomerDetailsModal';
+import CashWithdrawalModal from '../components/CashWithdrawalModal';
 import Pagination from '../components/Pagination';
 import ActionDropdown from '../components/ActionDropdown';
 import { supabase } from '../services/db';
@@ -54,6 +56,24 @@ export default function Customers({ onOpenExcelModal }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedCustomerForDetails, setSelectedCustomerForDetails] = useState(null);
   const [selectedCustomerForEdit, setSelectedCustomerForEdit] = useState(null);
+  const [selectedCustomerForWithdrawal, setSelectedCustomerForWithdrawal] = useState(null);
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
+
+  const getCustomerProfitPct = (c) => {
+    if (!c) return 40;
+    if (c.profit_share_percentage !== undefined && c.profit_share_percentage !== null && c.profit_share_percentage !== '') {
+      return Number(c.profit_share_percentage);
+    }
+    if (c.address && typeof c.address === 'string' && c.address.startsWith('{')) {
+      try {
+        const meta = JSON.parse(c.address)?.__meta;
+        if (meta?.profit_share_percentage !== undefined && meta?.profit_share_percentage !== null) {
+          return Number(meta.profit_share_percentage);
+        }
+      } catch (_) {}
+    }
+    return 40;
+  };
 
   // Pagination-2 State
   const [currentPage, setCurrentPage] = useState(1);
@@ -542,7 +562,7 @@ export default function Customers({ onOpenExcelModal }) {
                   {isColVisible('profit_share_percentage') && (
                     <td>
                       <span className="badge badge-teal" style={{ fontWeight: 700 }}>
-                        {c.profit_share_percentage !== undefined && c.profit_share_percentage !== null ? `${c.profit_share_percentage}%` : '40%'}
+                        {getCustomerProfitPct(c)}%
                       </span>
                     </td>
                   )}
@@ -562,6 +582,15 @@ export default function Customers({ onOpenExcelModal }) {
                           label: 'View Dossier',
                           description: 'KYC & Demat details',
                           onClick: () => setSelectedCustomerForDetails(c)
+                        },
+                        {
+                          icon: Banknote,
+                          label: 'Cash Withdrawal',
+                          description: 'Record cash payment & deduct balance',
+                          onClick: () => {
+                            setSelectedCustomerForWithdrawal(c);
+                            setIsWithdrawalModalOpen(true);
+                          }
                         },
                         {
                           icon: FileDown,
@@ -644,6 +673,25 @@ export default function Customers({ onOpenExcelModal }) {
             setSelectedCustomerForDetails(null);
             setSelectedCustomerForEdit(cust);
             setIsAddModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Cash Withdrawal Modal */}
+      {selectedCustomerForWithdrawal && (
+        <CashWithdrawalModal
+          isOpen={isWithdrawalModalOpen}
+          onClose={() => {
+            setIsWithdrawalModalOpen(false);
+            setSelectedCustomerForWithdrawal(null);
+          }}
+          customer={selectedCustomerForWithdrawal}
+          onSuccess={(newBalance) => {
+            setCustomers((prev) =>
+              prev.map((c) =>
+                c.id === selectedCustomerForWithdrawal.id ? { ...c, balance: newBalance } : c
+              )
+            );
           }}
         />
       )}

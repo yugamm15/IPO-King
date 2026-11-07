@@ -16,19 +16,51 @@ import {
   ShieldCheck,
   Building2,
   Calendar,
-  Layers
+  Layers,
+  Download,
+  ExternalLink,
+  Banknote
 } from 'lucide-react';
 import { downloadCustomerPdf, downloadCustomerPassbookPdf } from '../utils/pdfGenerator';
 import { fetchCustomerPassbookLedger, getSecureDocumentUrl } from '../services/db';
 import { CUSTOMER_DOC_TYPES } from './AddCustomerModal';
+import CashWithdrawalModal from './CashWithdrawalModal';
 
 export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
+  const [currentCustomer, setCurrentCustomer] = useState(customer);
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'passbook'
   const [showPassword, setShowPassword] = useState(false);
   const [activePhoto, setActivePhoto] = useState(null);
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [resolvingPhoto, setResolvingPhoto] = useState(false);
+  const [isCashWithdrawalOpen, setIsCashWithdrawalOpen] = useState(false);
+
+  useEffect(() => {
+    setCurrentCustomer(customer);
+  }, [customer]);
+
+  const isPdfDocument = (docVal) => {
+    if (!docVal) return false;
+    const str = typeof docVal === 'string' ? docVal : (docVal.url || docVal.path || docVal.name || '');
+    return str.startsWith('data:application/pdf') || /\.pdf(\?|$)/i.test(str) || str.toLowerCase().includes('application/pdf');
+  };
+
+  const getCustomerProfitPct = (cust) => {
+    if (!cust) return 40;
+    if (cust.profit_share_percentage !== undefined && cust.profit_share_percentage !== null && cust.profit_share_percentage !== '') {
+      return Number(cust.profit_share_percentage);
+    }
+    if (cust.address && typeof cust.address === 'string' && cust.address.startsWith('{')) {
+      try {
+        const meta = JSON.parse(cust.address)?.__meta;
+        if (meta?.profit_share_percentage !== undefined && meta?.profit_share_percentage !== null) {
+          return Number(meta.profit_share_percentage);
+        }
+      } catch (_) {}
+    }
+    return 40;
+  };
 
   const handleViewDocument = async (label, docUrl) => {
     if (!docUrl) return;
@@ -43,29 +75,83 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
     }
   };
 
-  useEffect(() => {
-    if (customer?.id && activeTab === 'passbook') {
+  const handleDownloadDocument = async (label, docVal) => {
+    if (!docVal) return;
+    try {
+      let resolvedUrl = docVal;
+      if (typeof docVal === 'object' && docVal !== null) {
+        resolvedUrl = docVal.url || docVal.path || '';
+      }
+      if (typeof resolvedUrl === 'string' && !resolvedUrl.startsWith('data:') && !resolvedUrl.startsWith('blob:') && !resolvedUrl.startsWith('http')) {
+        resolvedUrl = await getSecureDocumentUrl(resolvedUrl, 3600);
+      }
+
+      const isPdf = isPdfDocument(docVal) || isPdfDocument(resolvedUrl);
+      const ext = isPdf ? 'pdf' : 'png';
+      const safeCustomerName = (currentCustomer?.full_name || currentCustomer?.name || 'customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${safeCustomerName}_${safeLabel}.${ext}`;
+
+      if (resolvedUrl.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.href = resolvedUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
+        const resp = await fetch(resolvedUrl);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } else {
+        alert(`Document reference "${docVal}" is a legacy filename string. Please re-upload this document in Edit Customer to download or preview.`);
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      if (typeof docVal === 'string' && docVal.startsWith('http')) {
+        window.open(docVal, '_blank');
+      }
+    }
+  };
+
+  const reloadLedger = () => {
+    if (currentCustomer?.id) {
       setLoadingLedger(true);
-      fetchCustomerPassbookLedger(customer.id)
+      fetchCustomerPassbookLedger(currentCustomer.id)
         .then((res) => setLedgerEntries(res || []))
         .catch((err) => console.error('Error fetching passbook:', err))
         .finally(() => setLoadingLedger(false));
     }
-  }, [customer?.id, activeTab]);
+  };
 
-  if (!customer) return null;
+  useEffect(() => {
+    if (currentCustomer?.id && activeTab === 'passbook') {
+      reloadLedger();
+    }
+  }, [currentCustomer?.id, activeTab]);
 
-  let docs = customer.documents;
-  if (!docs && customer.address && typeof customer.address === 'string' && customer.address.startsWith('{')) {
+  if (!currentCustomer) return null;
+
+  const custProfitShare = getCustomerProfitPct(currentCustomer);
+
+  let docs = currentCustomer.documents;
+  if (!docs && currentCustomer.address && typeof currentCustomer.address === 'string' && currentCustomer.address.startsWith('{')) {
     try {
-      docs = JSON.parse(customer.address);
+      docs = JSON.parse(currentCustomer.address);
     } catch (_) {
       docs = {};
     }
   }
   docs = docs || {};
-  const beneficiaries = customer.beneficiary_name
-    ? String(customer.beneficiary_name).split(',').map((b) => b.trim()).filter(Boolean)
+  const beneficiaries = currentCustomer.beneficiary_name
+    ? String(currentCustomer.beneficiary_name).split(',').map((b) => b.trim()).filter(Boolean)
     : [];
 
   const docTypes = CUSTOMER_DOC_TYPES;
@@ -247,19 +333,40 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
             <>
               {/* Quick Info Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-                <div className="stat-card" style={{ padding: '16px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Available Balance</span>
-                  <strong style={{ fontSize: '20px', color: 'var(--success-text)', fontWeight: 800 }}>
-                    ₹ {Number(customer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </strong>
+                <div className="stat-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Available Balance</span>
+                    <strong style={{ fontSize: '20px', color: 'var(--success-text)', fontWeight: 800 }}>
+                      ₹ {Number(currentCustomer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setIsCashWithdrawalOpen(true)}
+                    style={{
+                      marginTop: '10px',
+                      padding: '5px 12px',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      width: 'fit-content',
+                      color: '#0f766e',
+                      borderColor: '#0f766e'
+                    }}
+                  >
+                    <Banknote size={14} /> Cash Withdrawal
+                  </button>
                 </div>
                 <div className="stat-card" style={{ padding: '16px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>PAN Number</span>
-                  <code style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary)' }}>{customer.pan_number || 'N/A'}</code>
+                  <code style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary)' }}>{currentCustomer.pan_number || 'N/A'}</code>
                 </div>
                 <div className="stat-card" style={{ padding: '16px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Mobile Number</span>
-                  <strong style={{ fontSize: '16px', color: 'var(--text-main)', fontWeight: 700 }}>{customer.mobile_number || 'N/A'}</strong>
+                  <strong style={{ fontSize: '16px', color: 'var(--text-main)', fontWeight: 700 }}>{currentCustomer.mobile_number || 'N/A'}</strong>
                 </div>
               </div>
 
@@ -277,92 +384,92 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', fontSize: '13px' }}>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>1. Customer No</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.customer_no || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.customer_no || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>2. Full Name</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.full_name || customer.name || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.full_name || currentCustomer.name || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>3. CA Number</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.ca_number || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.ca_number || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>4. PAN Number</span>
-                    <code style={{ color: 'var(--primary)', fontWeight: 700 }}>{customer.pan_number || '—'}</code>
+                    <code style={{ color: 'var(--primary)', fontWeight: 700 }}>{currentCustomer.pan_number || '—'}</code>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>5. Aadhaar Number</span>
                     <code style={{ color: 'var(--brand-accent)', fontWeight: 700, letterSpacing: '0.04em' }}>
-                      {customer.aadhaar_number ? customer.aadhaar_number.replace(/(\d{4})(?=\d)/g, '$1 ') : (customer.aadhar_number ? String(customer.aadhar_number).replace(/(\d{4})(?=\d)/g, '$1 ') : '—')}
+                      {currentCustomer.aadhaar_number ? currentCustomer.aadhaar_number.replace(/(\d{4})(?=\d)/g, '$1 ') : (currentCustomer.aadhar_number ? String(currentCustomer.aadhar_number).replace(/(\d{4})(?=\d)/g, '$1 ') : '—')}
                     </code>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>6. Birthdate (DOB)</span>
                     <strong style={{ color: 'var(--text-main)' }}>
-                      {customer.birthdate ? new Date(customer.birthdate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (customer.dob || '—')}
+                      {currentCustomer.birthdate ? new Date(currentCustomer.birthdate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (currentCustomer.dob || '—')}
                     </strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>7. DPID (Demat)</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.dpid || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.dpid || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>8. Bank Name</span>
-                    <strong style={{ color: 'var(--primary)' }}>{customer.bank_name || '—'}</strong>
+                    <strong style={{ color: 'var(--primary)' }}>{currentCustomer.bank_name || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>9. Bank Account No</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.bank_account_no || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.bank_account_no || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>10. Login ID</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.login_id || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.login_id || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>11. Arham (Password)</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.password_encrypted || 'Arham'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.password_encrypted || 'Arham'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>12. Customer Code</span>
-                    <strong style={{ color: 'var(--brand-accent)' }}>{customer.code || '—'}</strong>
+                    <strong style={{ color: 'var(--brand-accent)' }}>{currentCustomer.code || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>13. Mobile Number</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.mobile_number || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.mobile_number || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>14. Balance</span>
-                    <strong style={{ color: 'var(--success-text)' }}>₹ {Number(customer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    <strong style={{ color: 'var(--success-text)' }}>₹ {Number(currentCustomer.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>15. Ph Kono Che</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.phone_alternate || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.phone_alternate || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>16. Email Address</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.email || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.email || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>17. Phone</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.phone_other || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.phone_other || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>18. Return Amount</span>
-                    <strong style={{ color: 'var(--warning)' }}>₹ {Number(customer.return_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    <strong style={{ color: 'var(--warning)' }}>₹ {Number(currentCustomer.return_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>19. TDS Remarks</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{customer.tds_remarks || '—'}</strong>
+                    <strong style={{ color: 'var(--text-main)' }}>{currentCustomer.tds_remarks || '—'}</strong>
                   </div>
                   <div style={{ background: 'var(--panel-bg)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--panel-border)' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block' }}>20. Customer Profit Share</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                       <span className="badge badge-teal" style={{ fontWeight: 800 }}>
-                        {customer.profit_share_percentage !== undefined && customer.profit_share_percentage !== null ? `${customer.profit_share_percentage}%` : '40%'} Client
+                        {custProfitShare}% Client
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        ({Math.max(0, 100 - (Number(customer.profit_share_percentage) || 40))}% Treasury)
+                        ({Math.max(0, 100 - custProfitShare)}% Treasury)
                       </span>
                     </div>
                   </div>
@@ -405,6 +512,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
                   {docTypes.map((dt) => {
                     const docUrl = docs[dt.key] || (dt.aliases ? dt.aliases.map(a => docs[a]).find(Boolean) : null);
+                    const isPdf = isPdfDocument(docUrl);
                     return (
                       <div
                         key={dt.key}
@@ -424,32 +532,50 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                           width: '42px',
                           height: '42px',
                           borderRadius: '10px',
-                          background: docUrl ? 'rgba(16, 185, 129, 0.1)' : 'rgba(4, 47, 46, 0.05)',
-                          color: docUrl ? 'var(--success)' : 'var(--text-dim)',
+                          background: docUrl ? (isPdf ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)') : 'rgba(4, 47, 46, 0.05)',
+                          color: docUrl ? (isPdf ? '#dc2626' : 'var(--success)') : 'var(--text-dim)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center'
                         }}>
-                          {docUrl ? <ImageIcon size={20} /> : <FileText size={20} />}
+                          {isPdf ? <FileText size={20} /> : (docUrl ? <ImageIcon size={20} /> : <FileText size={20} />)}
                         </div>
 
                         <div>
                           <strong style={{ fontSize: '12.5px', color: 'var(--text-main)', display: 'block' }}>{dt.label}</strong>
-                          <span style={{ fontSize: '11px', color: docUrl ? 'var(--success-text)' : 'var(--text-dim)' }}>
-                            {docUrl ? 'Document Attached' : 'Not Uploaded'}
+                          <span style={{ fontSize: '11px', color: docUrl ? (isPdf ? '#dc2626' : 'var(--success-text)') : 'var(--text-dim)', fontWeight: 600 }}>
+                            {docUrl ? (isPdf ? 'PDF Document' : 'Image Attached') : 'Not Uploaded'}
                           </span>
                         </div>
 
                         {docUrl && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => handleViewDocument(dt.label, docUrl)}
-                            disabled={resolvingPhoto}
-                            style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px', marginTop: '4px' }}
-                          >
-                            <Eye size={12} /> {resolvingPhoto ? 'Loading...' : 'View Photo'}
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => handleViewDocument(dt.label, docUrl)}
+                              disabled={resolvingPhoto}
+                              style={{ padding: '4px 8px', fontSize: '11px', gap: '4px' }}
+                              title="View document"
+                            >
+                              <Eye size={12} /> {resolvingPhoto ? 'Loading...' : 'View'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={() => handleDownloadDocument(dt.label, docUrl)}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                gap: '4px',
+                                background: isPdf ? '#dc2626' : 'var(--primary)',
+                                borderColor: isPdf ? '#dc2626' : 'var(--primary)'
+                              }}
+                              title="Download document file"
+                            >
+                              <Download size={12} /> Download
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -590,7 +716,7 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
           </button>
         </div>
 
-        {/* Document Photo Viewer Lightbox */}
+        {/* Document Viewer Lightbox (Supports both Images & PDFs) */}
         {activePhoto && (
           <div
             className="modal-backdrop"
@@ -600,8 +726,9 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                maxWidth: '90vw',
-                maxHeight: '90vh',
+                maxWidth: '92vw',
+                width: isPdfDocument(activePhoto.url) ? '880px' : 'auto',
+                maxHeight: '92vh',
                 background: 'var(--panel-bg)',
                 borderRadius: '20px',
                 padding: '20px',
@@ -611,40 +738,87 @@ export default function CustomerDetailsModal({ customer, onClose, onEdit }) {
                 boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
                 <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {activePhoto.label} &bull; {customer.full_name || customer.name}
+                  {activePhoto.label} &bull; {currentCustomer.full_name || currentCustomer.name}
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => setActivePhoto(null)}
-                  style={{
-                    background: 'rgba(4, 47, 46, 0.05)',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    color: 'var(--text-muted)'
-                  }}
-                >
-                  <X size={16} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleDownloadDocument(activePhoto.label, activePhoto.url)}
+                    style={{ padding: '6px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Download size={14} /> Download {isPdfDocument(activePhoto.url) ? 'PDF' : 'File'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      if (activePhoto.url.startsWith('data:')) {
+                        const win = window.open();
+                        win.document.write(`<iframe src="${activePhoto.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                      } else {
+                        window.open(activePhoto.url, '_blank');
+                      }
+                    }}
+                    style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <ExternalLink size={14} /> Open in Tab
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivePhoto(null)}
+                    style={{
+                      background: 'rgba(4, 47, 46, 0.05)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)'
+                    }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
 
-              <div style={{ overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <img
-                  src={activePhoto.url}
-                  alt={activePhoto.label}
-                  style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain', borderRadius: '12px' }}
-                />
+              <div style={{ overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
+                {isPdfDocument(activePhoto.url) ? (
+                  <iframe
+                    src={activePhoto.url}
+                    title={activePhoto.label}
+                    style={{
+                      width: '100%',
+                      height: '70vh',
+                      border: 'none',
+                      borderRadius: '12px',
+                      background: '#ffffff'
+                    }}
+                  />
+                ) : (
+                  <img
+                    src={activePhoto.url}
+                    alt={activePhoto.label}
+                    style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain', borderRadius: '12px' }}
+                  />
+                )}
               </div>
             </div>
           </div>
         )}
+
+        {/* Cash Withdrawal Modal */}
+        <CashWithdrawalModal
+          isOpen={isCashWithdrawalOpen}
+          onClose={() => setIsCashWithdrawalOpen(false)}
+          customer={currentCustomer}
+          onSuccess={handleWithdrawalSuccess}
+        />
 
       </div>
     </div>

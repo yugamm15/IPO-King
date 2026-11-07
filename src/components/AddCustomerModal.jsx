@@ -130,7 +130,20 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         phone_other: initialData.phone_other || '',
         return_amount: initialData.return_amount !== undefined ? String(initialData.return_amount) : '0',
         tds_remarks: initialData.tds_remarks || '',
-        profit_share_percentage: initialData.profit_share_percentage !== undefined && initialData.profit_share_percentage !== null ? String(initialData.profit_share_percentage) : '40',
+        profit_share_percentage: (() => {
+          let p = initialData.profit_share_percentage;
+          if (p === undefined || p === null || p === '') {
+            if (initialData.address && typeof initialData.address === 'string' && initialData.address.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(initialData.address);
+                if (parsed?.__meta?.profit_share_percentage !== undefined && parsed?.__meta?.profit_share_percentage !== null) {
+                  p = parsed.__meta.profit_share_percentage;
+                }
+              } catch (_) {}
+            }
+          }
+          return p !== undefined && p !== null && p !== '' ? String(p) : '40';
+        })(),
         kyc_status: initialData.kyc_status || 'Verified'
       });
 
@@ -181,7 +194,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         customer_no: targetNo,
         code: prev.code || `IPO-${String(targetNo).padStart(3, '0')}`,
         password_encrypted: prev.password_encrypted || 'Arham',
-        profit_share_percentage: prev.profit_share_percentage || '40'
+        profit_share_percentage: prev.profit_share_percentage !== undefined && prev.profit_share_percentage !== null && prev.profit_share_percentage !== '' ? prev.profit_share_percentage : '40'
       }));
       setDocuments(createEmptyDocMap());
       setDocPreviews(createEmptyPreviewMap());
@@ -247,15 +260,11 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
     if (!file) return;
     setDocuments((prev) => ({ ...prev, [docType]: file }));
 
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setDocPreviews((prev) => ({ ...prev, [docType]: e.target.result }));
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setDocPreviews((prev) => ({ ...prev, [docType]: file.name }));
-    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setDocPreviews((prev) => ({ ...prev, [docType]: e.target.result }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const removeDoc = (docType) => {
@@ -268,7 +277,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
     for (const [docType, file] of Object.entries(documents)) {
       if (!file) {
         // If there was an existing uploaded document preview (from edit mode), preserve it
-        if (docPreviews[docType] && typeof docPreviews[docType] === 'string' && !docPreviews[docType].startsWith('data:')) {
+        if (docPreviews[docType] && typeof docPreviews[docType] === 'string') {
           uploadedUrls[docType] = docPreviews[docType];
         }
         continue;
@@ -278,14 +287,19 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         const cleanDocType = docType.replace(/[^a-zA-Z0-9_-]/g, '_');
         const fileName = `cust_${customerId || Date.now()}_${cleanDocType}_${Date.now()}.${fileExt}`;
         const filePath = `customer-documents/${fileName}`;
+        const contentType = file.type || (fileExt.toLowerCase() === 'pdf' ? 'application/pdf' : 'image/jpeg');
 
         const { data, error } = await supabase.storage
           .from('customer-docs')
-          .upload(filePath, file, { upsert: true });
+          .upload(filePath, file, { contentType, upsert: true });
 
         if (!error && data) {
-          uploadedUrls[docType] = filePath;
+          const { data: pubData } = supabase.storage
+            .from('customer-docs')
+            .getPublicUrl(filePath);
+          uploadedUrls[docType] = pubData?.publicUrl || filePath;
         } else {
+          // If storage bucket upload is denied or fails, store the full Base64 Data URL so the document is 100% saved & viewable/downloadable
           uploadedUrls[docType] = docPreviews[docType] || file.name;
         }
       } catch (_) {
@@ -315,7 +329,25 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
 
     try {
       const uploadedDocUrls = await uploadDocsToBucket(formData.pan_number);
-      const docJsonString = Object.keys(uploadedDocUrls).length > 0 ? JSON.stringify(uploadedDocUrls) : null;
+      const profitPctNum = !isNaN(parseFloat(formData.profit_share_percentage)) ? parseFloat(formData.profit_share_percentage) : 40;
+
+      // Preserve existing metadata (like withdrawals) from initialData.address if present
+      let existingAddressMeta = {};
+      if (initialData?.address && typeof initialData.address === 'string' && initialData.address.trim().startsWith('{')) {
+        try {
+          existingAddressMeta = JSON.parse(initialData.address);
+        } catch (_) {}
+      }
+
+      const docPayloadWithMeta = {
+        ...existingAddressMeta,
+        ...uploadedDocUrls,
+        __meta: {
+          ...(existingAddressMeta.__meta || {}),
+          profit_share_percentage: profitPctNum
+        }
+      };
+      const docJsonString = JSON.stringify(docPayloadWithMeta);
 
       const payload = {
         customer_no: parseInt(formData.customer_no, 10) || null,
@@ -338,7 +370,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
         phone_other: formData.phone_other.trim() || null,
         return_amount: parseFloat(formData.return_amount) || 0,
         tds_remarks: formData.tds_remarks.trim() || null,
-        profit_share_percentage: parseFloat(formData.profit_share_percentage) || 40,
+        profit_share_percentage: profitPctNum,
         beneficiary_name: beneficiaryString || null,
         kyc_status: formData.kyc_status || 'Verified',
         address: docJsonString
@@ -814,7 +846,7 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label className="input-label" style={{ margin: 0 }}>20. PROFIT SHARE (%)</label>
                   <span className="badge badge-teal" style={{ fontSize: '11px', padding: '2px 8px' }}>
-                    Treasury: {Math.max(0, 100 - (parseFloat(formData.profit_share_percentage) || 40))}%
+                    Treasury: {Math.max(0, 100 - (!isNaN(parseFloat(formData.profit_share_percentage)) ? parseFloat(formData.profit_share_percentage) : 40))}%
                   </span>
                 </div>
                 <input
@@ -942,9 +974,12 @@ export default function AddCustomerModal({ onClose, onCustomerAdded, nextCustome
                             style={{ width: '100%', height: '84px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--panel-border)' }}
                           />
                         ) : (
-                          <div style={{ padding: '14px 4px', fontSize: '11px', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
-                            <FileText size={22} style={{ margin: '0 auto 6px auto', display: 'block', color: 'var(--brand-accent)' }} />
-                            {typeof preview === 'string' && preview.includes('/') ? preview.split('/').pop() : preview}
+                          <div style={{ padding: '8px 4px', fontSize: '11px', color: 'var(--text-main)', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <FileText size={24} style={{ margin: '0 auto 4px auto', display: 'block', color: '#dc2626' }} />
+                            <strong style={{ color: '#dc2626', display: 'block', fontSize: '11px' }}>PDF File Attached</strong>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 auto' }}>
+                              {documents[dt.key]?.name || (typeof preview === 'string' && preview.includes('/') ? preview.split('/').pop() : 'Document')}
+                            </span>
                           </div>
                         )}
                         <button

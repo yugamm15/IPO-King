@@ -4,8 +4,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadSession } from './session.js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://munohtnnfozpznsawbvn.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
+const supabaseUrl = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || 'https://munohtnnfozpznsawbvn.supabase.co';
+const supabaseAnonKey = (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || 'sb_publishable_-tWiLxohizYZLb3Ckz5t1w_TU1iIYGZ';
 
 // Create Supabase client with dynamic Bearer session token forwarding
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -71,7 +71,7 @@ if (typeof window !== 'undefined') {
  */
 export async function getSecureDocumentUrl(filePathOrUrl, expiresInSeconds = 3600) {
   if (!filePathOrUrl || typeof filePathOrUrl !== 'string') return '';
-  if (filePathOrUrl.startsWith('data:') || filePathOrUrl.startsWith('blob:')) {
+  if (filePathOrUrl.startsWith('data:') || filePathOrUrl.startsWith('blob:') || filePathOrUrl.startsWith('http://') || filePathOrUrl.startsWith('https://')) {
     return filePathOrUrl;
   }
 
@@ -88,6 +88,14 @@ export async function getSecureDocumentUrl(filePathOrUrl, expiresInSeconds = 360
 
     if (!error && data?.signedUrl) {
       return data.signedUrl;
+    }
+
+    const { data: pubData } = supabase.storage
+      .from('customer-docs')
+      .getPublicUrl(cleanPath);
+
+    if (pubData?.publicUrl) {
+      return pubData.publicUrl;
     }
   } catch (err) {
     console.warn('[Storage] createSignedUrl notice:', err.message);
@@ -1209,85 +1217,207 @@ export async function fetchCustomerPassbookLedger(customerId) {
     const { data: apps, error } = await supabase
       .from('applications')
       .select('*, customers(*), ipos(*)')
-      .eq('id', customerId)
+      .or(`customer_id.eq.${customerId},id.eq.${customerId}`)
       .order('created_at', { ascending: false });
 
-    if (error || !apps) return [];
-
     const ledger = [];
-    apps.forEach((a) => {
-      const ipoName = a.ipos?.ipo_name || a.ipo_name || 'IPO Offering';
-      const bidAmt = Number(a.bid_amount) || 15000;
-      const profit = Number(a.profit_amount) || 0;
-      const clientShare = Number(a.client_share_60) || 0;
-      const tds = Number(a.tds_10) || 0;
-      const status = String(a.allotment_status || 'Pending');
-      const isRejected = status.toLowerCase().includes('reject') || status.toLowerCase().includes('not') || status.toLowerCase().includes('unallotted');
-      const custSharePct = Number(a.customers?.profit_share_percentage ?? a.profit_share_percentage ?? 40);
 
-      // Entry 1: Bid Block
-      ledger.push({
-        id: `bid_${a.id}`,
-        date: a.created_at || new Date().toISOString(),
-        scrip: ipoName,
-        type: 'IPO Bid (Mandate Blocked)',
-        lots: a.lots_applied || 1,
-        debit: 0,
-        credit: 0,
-        amount: bidAmt,
-        status: status,
-        remarks: `Bid for ${a.lots_applied || 1} lot(s)`
-      });
+    if (!error && apps) {
+      apps.forEach((a) => {
+        const ipoName = a.ipos?.ipo_name || a.ipo_name || 'IPO Offering';
+        const bidAmt = Number(a.bid_amount) || 15000;
+        const profit = Number(a.profit_amount) || 0;
+        const clientShare = Number(a.client_share_60) || 0;
+        const tds = Number(a.tds_10) || 0;
+        const status = String(a.allotment_status || 'Pending');
+        const isRejected = status.toLowerCase().includes('reject') || status.toLowerCase().includes('not') || status.toLowerCase().includes('unallotted');
+        const custSharePct = !isNaN(Number(a.customers?.profit_share_percentage ?? a.profit_share_percentage)) ? Number(a.customers?.profit_share_percentage ?? a.profit_share_percentage) : 40;
 
-      if (isRejected) {
+        // Entry 1: Bid Block
         ledger.push({
-          id: `ref_${a.id}`,
-          date: a.updated_at || a.created_at || new Date().toISOString(),
+          id: `bid_${a.id}`,
+          date: a.created_at || new Date().toISOString(),
           scrip: ipoName,
-          type: 'Mandate Refund (Unallotted)',
+          type: 'IPO Bid (Mandate Blocked)',
           lots: a.lots_applied || 1,
           debit: 0,
           credit: 0,
           amount: bidAmt,
-          status: 'Refunded',
-          remarks: 'Mandate released back to bank account'
-        });
-      } else if (profit > 0 || clientShare > 0) {
-        ledger.push({
-          id: `prof_${a.id}`,
-          date: a.updated_at || a.created_at || new Date().toISOString(),
-          scrip: ipoName,
-          type: `Profit Share (+${custSharePct}% - ${a.exit_mode || 'Market'})`,
-          lots: a.lots_applied || 1,
-          debit: 0,
-          credit: clientShare,
-          amount: clientShare,
-          status: 'Credited',
-          remarks: `Gross Profit ₹${profit.toLocaleString('en-IN')} (Exit @ ₹${a.exit_price || 0})`
+          status: status,
+          remarks: `Bid for ${a.lots_applied || 1} lot(s)`
         });
 
-        if (tds > 0) {
+        if (isRejected) {
           ledger.push({
-            id: `tds_${a.id}`,
+            id: `ref_${a.id}`,
             date: a.updated_at || a.created_at || new Date().toISOString(),
             scrip: ipoName,
-            type: 'TDS Withholding (-10%)',
+            type: 'Mandate Refund (Unallotted)',
             lots: a.lots_applied || 1,
-            debit: tds,
+            debit: 0,
             credit: 0,
-            amount: tds,
-            status: 'Tax Deducted',
-            remarks: `10% TDS on Client Profit ₹${clientShare.toLocaleString('en-IN')}`
+            amount: bidAmt,
+            status: 'Refunded',
+            remarks: 'Mandate released back to bank account'
           });
+        } else if (profit > 0 || clientShare > 0) {
+          ledger.push({
+            id: `prof_${a.id}`,
+            date: a.updated_at || a.created_at || new Date().toISOString(),
+            scrip: ipoName,
+            type: `Profit Share (+${custSharePct}% - ${a.exit_mode || 'Market'})`,
+            lots: a.lots_applied || 1,
+            debit: 0,
+            credit: clientShare,
+            amount: clientShare,
+            status: 'Credited',
+            remarks: `Gross Profit ₹${profit.toLocaleString('en-IN')} (Exit @ ₹${a.exit_price || 0})`
+          });
+
+          if (tds > 0) {
+            ledger.push({
+              id: `tds_${a.id}`,
+              date: a.updated_at || a.created_at || new Date().toISOString(),
+              scrip: ipoName,
+              type: 'TDS Withholding (-10%)',
+              lots: a.lots_applied || 1,
+              debit: tds,
+              credit: 0,
+              amount: tds,
+              status: 'Tax Deducted',
+              remarks: `10% TDS on Client Profit ₹${clientShare.toLocaleString('en-IN')}`
+            });
+          }
         }
+      });
+    }
+
+    // Fetch customer cash withdrawals
+    let withdrawals = [];
+    try {
+      const { data: cwData } = await supabase
+        .from('cash_withdrawals')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+      if (cwData && cwData.length > 0) {
+        withdrawals = cwData;
       }
+    } catch (_) {}
+
+    // Fallback: Check customer address for __withdrawals
+    if (withdrawals.length === 0) {
+      try {
+        const { data: custRow } = await supabase
+          .from('customers')
+          .select('address')
+          .eq('id', customerId)
+          .maybeSingle();
+        if (custRow?.address && typeof custRow.address === 'string' && custRow.address.startsWith('{')) {
+          const parsed = JSON.parse(custRow.address);
+          if (Array.isArray(parsed.__withdrawals)) {
+            withdrawals = parsed.__withdrawals;
+          }
+        }
+      } catch (_) {}
+    }
+
+    withdrawals.forEach((w, idx) => {
+      ledger.push({
+        id: `cw_${w.id || idx}`,
+        date: w.created_at || w.withdrawal_date || new Date().toISOString(),
+        scrip: 'Cash Payout',
+        type: `Cash Withdrawal (${w.reference_no || 'Cash'})`,
+        lots: '—',
+        debit: Number(w.amount) || 0,
+        credit: 0,
+        amount: Number(w.amount) || 0,
+        status: 'Paid in Cash',
+        remarks: w.remarks || 'Cash withdrawal payout'
+      });
     });
 
+    ledger.sort((a, b) => new Date(b.date) - new Date(a.date));
     return ledger;
   } catch (err) {
     console.error('Error fetching customer passbook ledger:', err);
     return [];
   }
+}
+
+/**
+ * Record a Cash Withdrawal for a customer and adjust their balance
+ */
+export async function recordCashWithdrawal({ customerId, amount, paymentMode = 'Cash', referenceNo, remarks, withdrawalDate }) {
+  if (!customerId || !amount || Number(amount) <= 0) {
+    throw new Error('Valid customer ID and withdrawal amount (> 0) are required.');
+  }
+
+  // 1. Fetch current customer
+  const { data: customer, error: fetchErr } = await supabase
+    .from('customers')
+    .select('id, full_name, name, pan_number, balance, address')
+    .eq('id', customerId)
+    .single();
+
+  if (fetchErr || !customer) {
+    throw new Error(fetchErr?.message || 'Customer not found in database');
+  }
+
+  const currentBal = Number(customer.balance) || 0;
+  const withdrawAmt = Number(amount);
+  const newBal = Math.max(0, currentBal - withdrawAmt);
+  const ref = referenceNo || `CW-${Date.now().toString().slice(-6)}`;
+  const dateStr = withdrawalDate || new Date().toISOString().slice(0, 10);
+
+  const withdrawalRecord = {
+    customer_id: customer.id,
+    customer_name: customer.full_name || customer.name || 'Customer',
+    pan_number: customer.pan_number || '',
+    amount: withdrawAmt,
+    previous_balance: currentBal,
+    new_balance: newBal,
+    withdrawal_date: dateStr,
+    payment_mode: paymentMode,
+    reference_no: ref,
+    remarks: remarks || 'Cash withdrawal payout',
+    created_at: new Date().toISOString()
+  };
+
+  // 2. Try inserting into cash_withdrawals table
+  try {
+    await supabase.from('cash_withdrawals').insert([withdrawalRecord]);
+  } catch (_) {}
+
+  // 3. Resilient metadata in customer.address
+  let parsedAddress = {};
+  if (customer.address && typeof customer.address === 'string' && customer.address.startsWith('{')) {
+    try {
+      parsedAddress = JSON.parse(customer.address);
+    } catch (_) {
+      parsedAddress = {};
+    }
+  }
+  const existingWithdrawals = Array.isArray(parsedAddress.__withdrawals) ? parsedAddress.__withdrawals : [];
+  parsedAddress.__withdrawals = [withdrawalRecord, ...existingWithdrawals];
+
+  // 4. Update customer balance & metadata
+  const { error: upErr } = await supabase
+    .from('customers')
+    .update({
+      balance: newBal,
+      address: JSON.stringify(parsedAddress)
+    })
+    .eq('id', customerId);
+
+  if (upErr) throw upErr;
+
+  invalidateDbCache();
+  return {
+    success: true,
+    withdrawal: withdrawalRecord,
+    newBalance: newBal
+  };
 }
 
 export async function updateIpoListingStatus(ipoId, listingPrice) {
@@ -1410,7 +1540,7 @@ export function normalizeCustomerRow(raw = {}) {
     } else if (cleanKey === 'TDSREMARKS' || cleanKey === 'TDS' || cleanKey === 'REMARKS') {
       norm.tds_remarks = String(cleanVal);
     } else if (cleanKey.includes('PROFIT') || cleanKey.includes('SHARE')) {
-      norm.profit_share_percentage = parseFloat(cleanVal) || 40;
+      norm.profit_share_percentage = !isNaN(parseFloat(cleanVal)) ? parseFloat(cleanVal) : 40;
     } else if (cleanKey.includes('BENEFICIARY')) {
       norm.beneficiary_name = String(cleanVal);
     }
@@ -1525,7 +1655,7 @@ export async function bulkImportCustomers(customerRows = []) {
         phone_other: r.phone_other || null,
         return_amount: typeof r.return_amount === 'number' ? r.return_amount : 0,
         tds_remarks: r.tds_remarks || null,
-        profit_share_percentage: typeof r.profit_share_percentage === 'number' ? r.profit_share_percentage : 40,
+        profit_share_percentage: !isNaN(parseFloat(r.profit_share_percentage)) ? parseFloat(r.profit_share_percentage) : 40,
         beneficiary_name: r.beneficiary_name || null,
         kyc_status: 'verified'
       };
@@ -1600,7 +1730,7 @@ export async function bulkInsertApplications(rows = [], targetIpoId = null) {
             phone_alternate: r.phone_alternate || r.phone_kono_chhe || r.kono_chhe || r['Phone Kono chhe'] || null,
             phone_other: r.phone_other || r.other_phone || r['Phone'] || null,
             balance: Number(r.balance) || 50000,
-            profit_share_percentage: Number(r.profit_share_percentage || r.profit_share || r.share) || 40
+            profit_share_percentage: !isNaN(parseFloat(r.profit_share_percentage ?? r.profit_share ?? r.share)) ? parseFloat(r.profit_share_percentage ?? r.profit_share ?? r.share) : 40
           };
           const { data: newCust, error: newCustErr } = await supabase
             .from('customers')

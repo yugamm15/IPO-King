@@ -470,7 +470,7 @@ export function downloadCustomerJainamStcgPdf(customerInfo = {}, allStcgRows = [
   const custPan = customerInfo.pan || customerInfo.pan_number || '—';
   const custBank = customerInfo.bank_name || '—';
   const custAccount = customerInfo.bank_account || customerInfo.bank_account_no || '—';
-  const custSharePct = customerInfo.client_profit_pct || customerInfo.profit_share_percentage || 40;
+  const custSharePct = !isNaN(Number(customerInfo.client_profit_pct ?? customerInfo.profit_share_percentage)) ? Number(customerInfo.client_profit_pct ?? customerInfo.profit_share_percentage) : 40;
 
   // Filter all records for this specific customer
   const targetRows = allStcgRows.filter(r => {
@@ -661,4 +661,162 @@ export function downloadCustomerJainamStcgPdf(customerInfo = {}, allStcgRows = [
   const cleanFileName = `jainam_stcg_statement_${cleanName}_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(cleanFileName);
 }
+
+/**
+ * Generates an official Cash Withdrawal Payment Voucher PDF
+ */
+export function downloadCashWithdrawalReceiptPdf(customer = {}, withdrawal = {}) {
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const customerName = customer.full_name || customer.name || 'Valued Customer';
+  const panNo = customer.pan_number || 'N/A';
+  const customerNo = customer.customer_no || customer.code || 'N/A';
+  const mobile = customer.mobile_number || 'N/A';
+  const refNo = withdrawal.reference_no || `CW-${Date.now().toString().slice(-6)}`;
+  const dateStr = withdrawal.withdrawal_date || new Date().toISOString().slice(0, 10);
+  const amount = Number(withdrawal.amount) || 0;
+  const prevBal = Number(withdrawal.previous_balance) || 0;
+  const newBal = Number(withdrawal.new_balance) !== undefined ? Number(withdrawal.new_balance) : Math.max(0, prevBal - amount);
+  const remarks = withdrawal.remarks || 'Cash withdrawal payout against customer balance';
+
+  // Header Banner - Forest / Teal Enterprise Theme
+  doc.setFillColor(15, 118, 110); // #0F766E
+  doc.rect(0, 0, pageWidth, 24, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.text('IPO KING — Cash Payment & Withdrawal Voucher', 14, 15);
+
+  // Subtitle & Metadata
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Voucher Ref: ${refNo}`, 14, 34);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Date of Withdrawal: ${dateStr}   |   Mode: Cash   |   Status: Paid & Settled`, 14, 40);
+
+  // Table items
+  const items = [
+    { label: 'Customer Full Name', value: customerName },
+    { label: 'Customer ID / No.', value: customerNo },
+    { label: 'PAN Card Number', value: panNo },
+    { label: 'Contact Mobile', value: mobile },
+    { label: 'Bank Name & A/c', value: `${customer.bank_name || 'Bank'} - ${customer.bank_account_no || 'N/A'}` },
+    { label: 'Previous Available Balance', value: `Rs. ${prevBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+    { label: 'Cash Amount Withdrawn / Paid', value: `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, highlight: true },
+    { label: 'Closing Available Balance', value: `Rs. ${newBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+    { label: 'Remarks / Purpose', value: remarks },
+    { label: 'Audit Verification', value: 'Digitally Recorded & Verified via IPO KING' }
+  ];
+
+  let currentY = 48;
+  const marginX = 14;
+  const tableWidth = pageWidth - marginX * 2;
+
+  // Table Header
+  doc.setFillColor(241, 245, 249);
+  doc.rect(marginX, currentY, tableWidth, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(30, 41, 59);
+  doc.text('TRANSACTION PARTICULARS', marginX + 4, currentY + 5.5);
+  doc.text('SETTLEMENT DETAILS / AMOUNT', marginX + 80, currentY + 5.5);
+
+  currentY += 8;
+
+  items.forEach((item, idx) => {
+    if (idx % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(marginX, currentY, tableWidth, 8, 'F');
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(item.label, marginX + 4, currentY + 5.5);
+
+    if (item.highlight) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 118, 110); // Emerald Green
+    } else if (idx === 7) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+    } else {
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+    }
+
+    doc.text(String(item.value), marginX + 80, currentY + 5.5);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(marginX, currentY + 8, marginX + tableWidth, currentY + 8);
+
+    currentY += 8;
+  });
+
+  // Receipt Acknowledgement Declaration
+  currentY += 12;
+  doc.setFillColor(248, 250, 252);
+  doc.rect(marginX, currentY, tableWidth, 18, 'F');
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(marginX, currentY, tableWidth, 18, 'S');
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `Received in cash the sum of Rs. ${amount.toLocaleString('en-IN')} (Rupees ${amount.toLocaleString('en-IN')} only) towards`,
+    marginX + 4,
+    currentY + 6
+  );
+  doc.text(
+    `customer balance withdrawal. All demat ledger accounts and balances stand adjusted accordingly.`,
+    marginX + 4,
+    currentY + 12
+  );
+
+  // Signature Blocks
+  currentY += 34;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+
+  // Left: Customer Signature
+  doc.line(marginX + 10, currentY, marginX + 70, currentY);
+  doc.text('Customer / Recipient Signature', marginX + 12, currentY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(`(${customerName})`, marginX + 12, currentY + 9);
+
+  // Right: Cashier Signature
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.line(pageWidth - marginX - 70, currentY, pageWidth - marginX - 10, currentY);
+  doc.text('Authorized Cashier / Manager', pageWidth - marginX - 68, currentY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('(IPO KING Cash Operations)', pageWidth - marginX - 68, currentY + 9);
+
+  // Footer Note
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    'This is an official payment voucher generated by IPO KING. Retain for tax & demat accounting records.',
+    pageWidth / 2,
+    pageHeight - 8,
+    { align: 'center' }
+  );
+
+  const cleanCust = customerName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const fileName = `cash_withdrawal_${cleanCust}_${refNo}.pdf`;
+  doc.save(fileName);
+}
+
 
